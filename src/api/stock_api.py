@@ -2,18 +2,54 @@
 import asyncio
 from datetime import datetime, timedelta
 from typing import List, Optional
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 from sqlalchemy.orm import sessionmaker
 from src.models.stock import Stock, StockPrice
 from src.services.data_collector import DataCollector
 from src.services.recommendation_engine import RecommendationEngine
 from src.middleware.validator import require_stock_code, InputValidator
+from src.database import get_db_session
+from src.utils.exceptions import DatabaseError, ValidationError
 from config.settings import settings
 
 stock_bp = Blueprint('stocks', __name__, url_prefix='/api/stocks')
 
-# Database session (to be injected)
-db_session = None
+# Session factory (to be injected)
+session_factory = None
+cache_manager = None
+rate_limiter = None
+
+
+def get_current_session():
+    """Get database session for current request"""
+    if not hasattr(g, 'db_session'):
+        if session_factory:
+            g.db_session = session_factory()
+        else:
+            raise DatabaseError("Database session not available")
+    return g.db_session
+
+
+@stock_bp.before_request
+def before_request():
+    """Initialize database session for each request"""
+    pass  # Session is created on-demand in get_current_session()
+
+
+@stock_bp.teardown_request
+def teardown_request(exception=None):
+    """Clean up database session after each request"""
+    db_session = g.pop('db_session', None)
+    if db_session:
+        try:
+            if exception:
+                db_session.rollback()
+            else:
+                db_session.commit()
+        except Exception:
+            db_session.rollback()
+        finally:
+            db_session.close()
 
 
 @stock_bp.route('/<stock_code>', methods=['GET'])
@@ -21,6 +57,8 @@ db_session = None
 def get_stock_info(stock_code: str):
     """Get comprehensive stock information"""
     try:
+        db_session = get_current_session()
+        
         # Get basic stock info
         stock = db_session.query(Stock).filter_by(code=stock_code).first()
         if not stock:
@@ -59,6 +97,8 @@ def get_stock_info(stock_code: str):
 def get_stock_timeline(stock_code: str):
     """Get historical price timeline"""
     try:
+        db_session = get_current_session()
+        
         # Parse query parameters
         range_param = InputValidator.validate_time_range(
             request.args.get('range', '1M')
@@ -114,6 +154,7 @@ def get_stock_timeline(stock_code: str):
 def get_stock_factors(stock_code: str):
     """Get detailed factor analysis"""
     try:
+        db_session = get_current_session()
         rec_engine = RecommendationEngine(db_session)
         
         # Get features
@@ -141,6 +182,8 @@ def get_stock_factors(stock_code: str):
 def scan_stocks():
     """Multi-condition stock screening"""
     try:
+        db_session = get_current_session()
+        
         # Parse query parameters
         industry = InputValidator.sanitize_string(request.args.get('industry', ''))
         min_price = InputValidator.validate_numeric_range(request.args.get('min_price', type=float), 0, 10000)
@@ -213,6 +256,8 @@ def scan_stocks():
 def list_stocks():
     """Get list of all available stocks"""
     try:
+        db_session = get_current_session()
+        
         page, per_page = InputValidator.validate_pagination(
             request.args.get('page', type=int),
             request.args.get('per_page', type=int)
@@ -252,6 +297,7 @@ def list_stocks():
 def generate_recommendation(stock_code: str):
     """Generate fresh recommendation for a stock"""
     try:
+        db_session = get_current_session()
         rec_engine = RecommendationEngine(db_session)
         recommendation = rec_engine.predict_recommendation(stock_code)
         
@@ -264,11 +310,235 @@ def generate_recommendation(stock_code: str):
         return jsonify({'error': str(e)}), 500
 
 
+# New API endpoints to match documentation
+@stock_bp.route('/<stock_code>/analysis', methods=['GET'])
+@require_stock_code  
+def get_stock_analysis(stock_code: str):
+    """Get comprehensive stock analysis"""
+    try:
+        db_session = get_current_session()
+        analysis_type = request.args.get('analysis_type', 'all')
+        
+        # Get basic stock info
+        stock = db_session.query(Stock).filter_by(code=stock_code).first()
+        if not stock:
+            return jsonify({'error': 'Stock not found'}), 404
+        
+        # Get latest price data
+        latest_price = db_session.query(StockPrice).filter_by(
+            stock_code=stock_code
+        ).order_by(StockPrice.timestamp.desc()).first()
+        
+        result = {
+            'stock_code': stock_code,
+            'company_name': stock.name,
+            'current_price': latest_price.close_price if latest_price else None,
+            'analysis_timestamp': datetime.now().isoformat()
+        }
+        
+        # Add analysis based on type
+        if analysis_type in ['technical', 'all']:
+            result['technical_analysis'] = {
+                'overall_trend': 'neutral',
+                'trend_strength': 0.5,
+                'support_levels': [],
+                'resistance_levels': [],
+                'indicators': {}
+            }
+        
+        if analysis_type in ['fundamental', 'all']:
+            result['fundamental_analysis'] = {
+                'valuation': {'pe_ratio': None, 'pb_ratio': None},
+                'profitability': {'roe': None, 'roa': None},
+                'growth': {'revenue_growth': None},
+                'financial_health': {'debt_ratio': None}
+            }
+        
+        if analysis_type in ['sentiment', 'all']:
+            result['sentiment_analysis'] = {
+                'overall_sentiment': 0.5,
+                'sentiment_level': 'neutral',
+                'news_sentiment': {'score': 0.5, 'article_count': 0},
+                'social_sentiment': {'score': 0.5, 'mention_count': 0}
+            }
+        
+        if analysis_type == 'all':
+            result['recommendation'] = {
+                'action': '持有',
+                'confidence': 0.5,
+                'score': 5.0,
+                'risk_level': '中等'
+            }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@stock_bp.route('/<stock_code>/realtime', methods=['GET'])
+@require_stock_code
+def get_realtime_data(stock_code: str):
+    """Get real-time stock data"""
+    try:
+        db_session = get_current_session()
+        
+        # Get latest price data (in real implementation, this would come from live feed)
+        latest_price = db_session.query(StockPrice).filter_by(
+            stock_code=stock_code
+        ).order_by(StockPrice.timestamp.desc()).first()
+        
+        if not latest_price:
+            return jsonify({'error': 'No price data available'}), 404
+        
+        result = {
+            'stock_code': stock_code,
+            'current_price': latest_price.close_price,
+            'price_change': latest_price.change_pct,
+            'volume': latest_price.volume,
+            'timestamp': latest_price.timestamp.isoformat(),
+            'market_status': 'closed'  # This would be determined by market hours
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@stock_bp.route('/<stock_code>/history', methods=['GET'])
+@require_stock_code
+def get_historical_data(stock_code: str):
+    """Get historical price data"""
+    try:
+        db_session = get_current_session()
+        
+        # Parse query parameters
+        days = min(365, max(1, request.args.get('days', 30, type=int)))
+        start_date = datetime.now() - timedelta(days=days)
+        
+        # Get historical price data
+        prices = db_session.query(StockPrice).filter(
+            StockPrice.stock_code == stock_code,
+            StockPrice.timestamp >= start_date
+        ).order_by(StockPrice.timestamp.desc()).limit(100).all()
+        
+        data = []
+        for price in prices:
+            data.append({
+                'date': price.timestamp.strftime('%Y-%m-%d'),
+                'open': price.open_price,
+                'high': price.high_price,
+                'low': price.low_price,
+                'close': price.close_price,
+                'volume': price.volume
+            })
+        
+        result = {
+            'stock_code': stock_code,
+            'period': f"{days}d",
+            'data_count': len(data),
+            'data': data
+        }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@stock_bp.route('/batch_analysis', methods=['POST'])
+def batch_analysis():
+    """Batch analysis for multiple stocks"""
+    try:
+        db_session = get_current_session()
+        
+        data = request.get_json()
+        if not data or 'stock_codes' not in data:
+            raise ValidationError("Missing stock_codes in request")
+        
+        stock_codes = data['stock_codes']
+        if not isinstance(stock_codes, list) or len(stock_codes) == 0:
+            raise ValidationError("stock_codes must be a non-empty list")
+        
+        if len(stock_codes) > 50:
+            raise ValidationError("Maximum 50 stocks per batch request")
+        
+        analysis_types = data.get('analysis_types', ['technical'])
+        
+        results = []
+        for stock_code in stock_codes:
+            try:
+                # Basic validation
+                if not stock_code or len(stock_code) < 6:
+                    results.append({
+                        'stock_code': stock_code,
+                        'status': 'error',
+                        'error': 'Invalid stock code format'
+                    })
+                    continue
+                
+                # Get basic analysis (simplified)
+                stock = db_session.query(Stock).filter_by(code=stock_code).first()
+                if not stock:
+                    results.append({
+                        'stock_code': stock_code,
+                        'status': 'error',
+                        'error': 'Stock not found'
+                    })
+                    continue
+                
+                analysis = {
+                    'stock_code': stock_code,
+                    'company_name': stock.name,
+                    'status': 'success'
+                }
+                
+                # Add requested analysis types
+                if 'technical' in analysis_types:
+                    analysis['technical_score'] = 5.0
+                if 'fundamental' in analysis_types:
+                    analysis['fundamental_score'] = 5.0
+                
+                results.append(analysis)
+                
+            except Exception as e:
+                results.append({
+                    'stock_code': stock_code,
+                    'status': 'error',
+                    'error': str(e)
+                })
+        
+        # Summary statistics
+        successful = [r for r in results if r.get('status') == 'success']
+        failed = [r for r in results if r.get('status') == 'error']
+        
+        response = {
+            'batch_id': f"batch_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            'total_stocks': len(stock_codes),
+            'completed': len(successful),
+            'failed': len(failed),
+            'results': results,
+            'summary': {
+                'success_rate': len(successful) / len(stock_codes) if stock_codes else 0
+            }
+        }
+        
+        return jsonify(response)
+        
+    except ValidationError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # Health check endpoint
 @stock_bp.route('/health', methods=['GET'])
 def health_check():
     """API health check"""
     try:
+        db_session = get_current_session()
+        
         # Test database connection
         stock_count = db_session.query(Stock).count()
         

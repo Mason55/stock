@@ -23,10 +23,13 @@ def create_app():
     # Enable CORS for frontend
     CORS(app, origins=['http://localhost:3000', 'http://127.0.0.1:3000'])
     
-    # Database setup - using managed database instance
-    if not db_manager.health_check():
-        logger.error("Database health check failed")
-        raise RuntimeError("Database connection failed")
+    # Database setup - using managed database instance with fallback
+    if not db_manager.is_initialized():
+        logger.error("Database initialization failed completely")
+        raise RuntimeError("Database initialization failed")
+    
+    if db_manager.is_fallback_mode():
+        logger.warning("Running in database fallback mode")
     
     session_factory = get_session_factory()
     

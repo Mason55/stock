@@ -3,12 +3,14 @@ import asyncio
 import logging
 import schedule
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from config.settings import settings
 from src.services.data_collector import DataCollector
 from src.services.recommendation_engine import RecommendationEngine
+from src.models.stock import Stock, StockPrice
+from src.database import db_manager, get_db_session
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,22 +20,23 @@ class DataScheduler:
     """Background scheduler for data collection and model updates"""
     
     def __init__(self):
-        # Database setup
-        self.engine = create_engine(settings.DATABASE_URL)
-        Session = sessionmaker(bind=self.engine)
-        self.db_session = Session()
+        # Use managed database instance
+        if not db_manager.is_initialized():
+            raise RuntimeError("Database not initialized")
         
-        # Initialize services
+        self.session_factory = db_manager.get_session_factory()
+        
+        # Initialize services will be created per operation
         self.data_collector = None
-        self.recommendation_engine = RecommendationEngine(self.db_session)
     
     async def run_data_collection(self):
         """Execute data collection cycle"""
         logger.info("Starting scheduled data collection...")
         
         try:
-            async with DataCollector(self.db_session) as collector:
-                await collector.run_data_collection()
+            with db_manager.get_session() as db_session:
+                async with DataCollector(db_session) as collector:
+                    await collector.run_data_collection()
             logger.info("Data collection completed successfully")
         except Exception as e:
             logger.error(f"Data collection failed: {e}")
@@ -43,9 +46,11 @@ class DataScheduler:
         logger.info("Starting model update...")
         
         try:
-            # This would normally load training data from database
-            # For now, we'll skip actual training due to lack of labeled data
-            logger.info("Model update completed (placeholder)")
+            with db_manager.get_session() as db_session:
+                recommendation_engine = RecommendationEngine(db_session)
+                # This would normally load training data from database
+                # For now, we'll skip actual training due to lack of labeled data
+                logger.info("Model update completed (placeholder)")
         except Exception as e:
             logger.error(f"Model update failed: {e}")
     
@@ -70,19 +75,18 @@ class DataScheduler:
         logger.info("Running data cleanup...")
         
         try:
-            # Clean up old price data (keep 2 years)
-            cutoff_date = datetime.now() - timedelta(days=730)
-            
-            deleted_count = self.db_session.query(StockPrice).filter(
-                StockPrice.timestamp < cutoff_date
-            ).delete()
-            
-            self.db_session.commit()
-            logger.info(f"Cleaned up {deleted_count} old price records")
+            with db_manager.get_session() as db_session:
+                # Clean up old price data (keep 2 years)
+                cutoff_date = datetime.now() - timedelta(days=730)
+                
+                deleted_count = db_session.query(StockPrice).filter(
+                    StockPrice.timestamp < cutoff_date
+                ).delete()
+                
+                logger.info(f"Cleaned up {deleted_count} old price records")
             
         except Exception as e:
             logger.error(f"Data cleanup failed: {e}")
-            self.db_session.rollback()
     
     def run_forever(self):
         """Run the scheduler continuously"""

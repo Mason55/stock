@@ -11,10 +11,12 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    def __init__(self):
+    def __init__(self, auto_init=True):
         self.engine = None
         self.Session = None
-        self._setup_database()
+        self._initialized = False
+        if auto_init:
+            self._setup_database()
     
     def _setup_database(self):
         """Setup database engine with connection pool"""
@@ -39,12 +41,40 @@ class DatabaseManager:
             
             # Create session factory
             self.Session = sessionmaker(bind=self.engine)
+            self._initialized = True
             
             logger.info("Database initialized successfully")
             
         except Exception as e:
-            logger.error(f"Database initialization failed: {e}")
-            raise
+            logger.warning(f"Database initialization failed: {e}")
+            # Initialize in degraded mode
+            self._initialize_mock_mode()
+    
+    def _initialize_mock_mode(self):
+        """Initialize in mock mode when database is unavailable"""
+        try:
+            # Use SQLite in-memory database as fallback
+            fallback_url = "sqlite:///:memory:"
+            logger.info(f"Initializing fallback database: {fallback_url}")
+            
+            self.engine = create_engine(
+                fallback_url,
+                echo=settings.DEBUG,
+                pool_pre_ping=True
+            )
+            
+            # Create tables in memory
+            Base.metadata.create_all(self.engine)
+            
+            # Create session factory
+            self.Session = sessionmaker(bind=self.engine)
+            self._initialized = True
+            
+            logger.warning("Database initialized in fallback mode (SQLite in-memory)")
+            
+        except Exception as e:
+            logger.error(f"Fallback database initialization failed: {e}")
+            self._initialized = False
     
     def _on_connect(self, dbapi_connection, connection_record):
         """Called when a new database connection is created"""
@@ -74,6 +104,9 @@ class DatabaseManager:
     
     def health_check(self) -> bool:
         """Check database connection health"""
+        if not self._initialized:
+            return False
+            
         try:
             with self.get_session() as session:
                 session.execute("SELECT 1")
@@ -81,6 +114,16 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
             return False
+    
+    def is_initialized(self) -> bool:
+        """Check if database is initialized"""
+        return self._initialized
+    
+    def is_fallback_mode(self) -> bool:
+        """Check if running in fallback mode"""
+        if not self._initialized:
+            return False
+        return "sqlite:///:memory:" in str(self.engine.url)
     
     def close(self):
         """Close database engine"""

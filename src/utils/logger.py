@@ -26,18 +26,22 @@ def setup_logger(name: str, log_file: str = None, level=logging.INFO) -> logging
     logger.addHandler(console_handler)
     
     if log_file:
-        log_path = Path('logs')
-        log_path.mkdir(exist_ok=True)
-        
-        file_handler = RotatingFileHandler(
-            log_path / log_file,
-            maxBytes=10*1024*1024,
-            backupCount=5,
-            encoding='utf-8'
-        )
-        file_handler.setLevel(level)
-        file_handler.setFormatter(formatter)
-        logger.addHandler(file_handler)
+        try:
+            log_path = Path('logs')
+            log_path.mkdir(exist_ok=True)
+            
+            file_handler = RotatingFileHandler(
+                log_path / log_file,
+                maxBytes=10*1024*1024,
+                backupCount=5,
+                encoding='utf-8'
+            )
+            file_handler.setLevel(level)
+            file_handler.setFormatter(formatter)
+            logger.addHandler(file_handler)
+        except (OSError, PermissionError) as e:
+            # Fallback to console only if file logging fails
+            console_handler.warning(f"Failed to setup file logging: {e}, using console only")
     
     return logger
 

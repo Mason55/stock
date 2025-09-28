@@ -1,7 +1,7 @@
 # src/models/stock.py - Stock data models
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, String, Float, DateTime, Integer, Text
+from sqlalchemy import Column, String, Float, DateTime, Integer, Text, Index
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from pydantic import BaseModel
@@ -25,7 +25,7 @@ class Stock(Base):
 class StockPrice(Base):
     __tablename__ = 'stock_prices'
     __table_args__ = (
-        {'mysql_engine': 'InnoDB', 'mysql_charset': 'utf8mb4'},
+        Index('idx_stock_code_timestamp', 'stock_code', 'timestamp'),
     )
     
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -35,7 +35,7 @@ class StockPrice(Base):
     high_price = Column(Float, nullable=False)
     low_price = Column(Float, nullable=False)
     close_price = Column(Float, nullable=False)
-    volume = Column(Float, nullable=False)
+    volume = Column(Integer, nullable=False)  # Trading volume in shares
     turnover = Column(Float)
     change_pct = Column(Float)
 

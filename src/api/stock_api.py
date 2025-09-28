@@ -42,9 +42,13 @@ def get_current_session():
     """Get database session for current request"""
     if not hasattr(g, 'db_session'):
         if session_factory:
-            g.db_session = session_factory()
+            try:
+                g.db_session = session_factory()
+            except Exception as e:
+                logger.warning(f"Failed to create database session: {e}")
+                g.db_session = None
         else:
-            raise DatabaseError("Database session not available")
+            g.db_session = None
     return g.db_session
 
 
@@ -89,6 +93,13 @@ def get_stock_info(stock_code: str):
     """Get comprehensive stock information"""
     try:
         db_session = get_current_session()
+        
+        # Fallback to mock data if database unavailable
+        if not db_session or is_offline_mode():
+            mock_data = mock_data_service.get_stock_info(stock_code)
+            if not mock_data:
+                return jsonify({'error': 'Stock not found'}), 404
+            return jsonify(mock_data)
         
         # Get basic stock info
         stock = db_session.query(Stock).filter_by(code=stock_code).first()

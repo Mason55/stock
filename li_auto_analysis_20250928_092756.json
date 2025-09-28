@@ -1,0 +1,14 @@
+{
+  "company": "理想汽车",
+  "symbol_hk": "2015.HK",
+  "symbol_us": "LI",
+  "analysis_time": "2025-09-28 09:27:53",
+  "market_status": "OPEN",
+  "real_time_data": {
+    "price": 102.0,
+    "change": 0.7000000000000028,
+    "change_pct": 0.6910167818361331,
+    "volume": -1
+  },
+  "error": "无法获取历史数据"
+}

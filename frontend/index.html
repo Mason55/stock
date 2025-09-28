@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<!-- frontend/index.html - Stock analysis system frontend -->
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>中国股市分析系统</title>
+    <link rel="stylesheet" href="static/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1><i class="fas fa-chart-line"></i> 中国股市分析系统</h1>
+            <div class="header-controls">
+                <button id="theme-toggle" class="btn btn-secondary">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <div class="search-container">
+                    <input type="text" id="stock-search" placeholder="输入股票代码或名称..." />
+                    <button id="search-btn" class="btn btn-primary">
+                        <i class="fas fa-search"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Stock Info Panel -->
+            <div class="panel" id="stock-info-panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-info-circle"></i> 股票信息</h2>
+                    <button class="btn btn-sm" id="refresh-btn">
+                        <i class="fas fa-refresh"></i> 刷新
+                    </button>
+                </div>
+                <div class="panel-content">
+                    <div id="stock-info-content">
+                        <p class="placeholder">请输入股票代码查询信息</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Price Chart -->
+            <div class="panel" id="chart-panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-chart-area"></i> 价格走势</h2>
+                    <div class="chart-controls">
+                        <button class="btn btn-sm period-btn active" data-period="1D">1日</button>
+                        <button class="btn btn-sm period-btn" data-period="1W">1周</button>
+                        <button class="btn btn-sm period-btn" data-period="1M">1月</button>
+                        <button class="btn btn-sm period-btn" data-period="3M">3月</button>
+                        <button class="btn btn-sm period-btn" data-period="1Y">1年</button>
+                    </div>
+                </div>
+                <div class="panel-content">
+                    <div id="price-chart">
+                        <canvas id="chart-canvas" width="800" height="400"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recommendation Panel -->
+            <div class="panel" id="recommendation-panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-thumbs-up"></i> 投资建议</h2>
+                    <button class="btn btn-sm" id="generate-recommendation">
+                        <i class="fas fa-robot"></i> 生成建议
+                    </button>
+                </div>
+                <div class="panel-content">
+                    <div id="recommendation-content">
+                        <p class="placeholder">暂无投资建议</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Factor Analysis -->
+            <div class="panel" id="factors-panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-analytics"></i> 因子分析</h2>
+                </div>
+                <div class="panel-content">
+                    <div id="factors-content">
+                        <p class="placeholder">暂无因子分析数据</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stock Scanner -->
+            <div class="panel" id="scanner-panel">
+                <div class="panel-header">
+                    <h2><i class="fas fa-filter"></i> 股票筛选</h2>
+                    <button class="btn btn-sm" id="toggle-scanner">
+                        <i class="fas fa-cog"></i> 设置筛选条件
+                    </button>
+                </div>
+                <div class="panel-content">
+                    <div id="scanner-controls" class="scanner-controls" style="display: none;">
+                        <div class="control-group">
+                            <label>行业：</label>
+                            <select id="industry-filter">
+                                <option value="">全部</option>
+                                <option value="银行">银行</option>
+                                <option value="房地产">房地产</option>
+                                <option value="白酒">白酒</option>
+                            </select>
+                        </div>
+                        <div class="control-group">
+                            <label>价格范围：</label>
+                            <input type="number" id="min-price" placeholder="最低价" />
+                            <span>-</span>
+                            <input type="number" id="max-price" placeholder="最高价" />
+                        </div>
+                        <div class="control-group">
+                            <label>建议类型：</label>
+                            <select id="action-filter">
+                                <option value="">全部</option>
+                                <option value="buy">买入</option>
+                                <option value="hold">观望</option>
+                                <option value="sell">回避</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-primary" id="scan-stocks">
+                            <i class="fas fa-search"></i> 开始筛选
+                        </button>
+                    </div>
+                    <div id="scanner-results">
+                        <p class="placeholder">点击"设置筛选条件"开始筛选股票</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Loading Overlay -->
+        <div id="loading-overlay" class="loading-overlay" style="display: none;">
+            <div class="loading-spinner">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>加载中...</p>
+            </div>
+        </div>
+
+        <!-- Toast Notifications -->
+        <div id="toast-container" class="toast-container"></div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="static/app.js"></script>
+</body>
+</html>

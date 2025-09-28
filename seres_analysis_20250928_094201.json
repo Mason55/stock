@@ -1,0 +1,78 @@
+{
+  "company": "赛力斯",
+  "symbol": "601127.SH",
+  "industry": "汽车制造",
+  "analysis_time": "2025-09-28 09:42:01",
+  "market_context": {
+    "trading_session": "正常交易时间",
+    "market_status": "TRADING",
+    "market_sentiment": "新能源汽车板块关注度较高",
+    "policy_environment": "国家持续支持新能源汽车发展"
+  },
+  "company_background": {
+    "company_profile": {
+      "full_name": "重庆赛力斯汽车股份有限公司",
+      "business": "新能源智能汽车制造",
+      "main_products": [
+        "赛力斯SF5",
+        "问界M5",
+        "问界M7",
+        "问界M9"
+      ],
+      "partnerships": [
+        "华为智选车合作伙伴",
+        "与华为深度合作"
+      ],
+      "technology": [
+        "增程式电动技术",
+        "智能驾驶",
+        "智能座舱"
+      ]
+    },
+    "market_position": {
+      "sector": "新能源汽车",
+      "sub_sector": "增程式电动车",
+      "main_competitors": [
+        "理想汽车",
+        "蔚来",
+        "小鹏",
+        "比亚迪"
+      ],
+      "advantages": [
+        "华为技术加持",
+        "增程技术路线",
+        "智能化程度高"
+      ]
+    },
+    "recent_developments": {
+      "sales_trend": "问界系列销量快速增长",
+      "product_updates": "问界新M7改款上市",
+      "partnerships": "与华为合作不断深化",
+      "challenges": "市场竞争激烈，盈利压力较大"
+    }
+  },
+  "market_data": {
+    "name": "赛力斯",
+    "current_price": 157.22,
+    "yesterday_close": 148.65,
+    "open_price": 152.0,
+    "high_price": 163.52,
+    "low_price": 151.62,
+    "change": 8.569999999999993,
+    "change_pct": 5.765220316178939,
+    "volume": 99743563,
+    "turnover": 16002434024.0
+  },
+  "technical_analysis": {
+    "signals": [
+      "日内上涨",
+      "振幅较大",
+      "大涨",
+      "成交量放大"
+    ],
+    "score": 3.0,
+    "recommendation": "BUY",
+    "confidence": 80
+  },
+  "valuation_note": "当前价格 ¥157.22, 成交额 160.02亿元"
+}

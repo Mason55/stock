@@ -1,0 +1,38 @@
+{
+  "company": "理想汽车",
+  "symbol_hk": "2015.HK",
+  "symbol_us": "LI",
+  "analysis_time": "2025-09-28 09:29:09",
+  "market_context": {
+    "trading_session": "正常交易时间",
+    "market_status": "TRADING",
+    "industry": {
+      "sector": "新能源汽车",
+      "market_trend": "电动汽车渗透率持续提升",
+      "policy_support": "国家政策大力支持新能源汽车发展",
+      "competition": "行业竞争激烈，技术创新是关键"
+    }
+  },
+  "market_data": {
+    "name": "理想汽车－Ｗ",
+    "current_price": 100.1,
+    "yesterday_close": 102.0,
+    "open_price": 101.3,
+    "high_price": 104.0,
+    "low_price": 99.8,
+    "change": -1.9000000000000057,
+    "change_pct": -1.8627450980392213,
+    "volume": 1,
+    "turnover": 100.2
+  },
+  "technical_analysis": {
+    "signals": [
+      "日内下跌",
+      "下跌"
+    ],
+    "score": -2,
+    "recommendation": "SELL",
+    "confidence": 70
+  },
+  "valuation_note": "当前价格 HK$100.10, 预估PE倍数范围 15-25倍"
+}

@@ -1,0 +1,25 @@
+# requirements-minimal.txt - 最小可运行依赖
+# 仅包含基础功能，无ML和重型依赖
+
+# Web框架
+Flask==2.3.2
+Flask-CORS==4.0.0
+
+# 数据库 (只包含SQLite支持)
+SQLAlchemy==2.0.19
+
+# 数据处理 (基础版本)
+pandas==2.0.3
+numpy==1.24.3
+requests==2.31.0
+
+# 配置管理
+pydantic==2.1.1
+pydantic-settings==2.0.2
+python-dotenv==1.0.0
+
+# 序列化
+PyYAML==6.0.1
+
+# 基础测试
+pytest==7.4.0

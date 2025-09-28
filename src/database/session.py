@@ -1,6 +1,7 @@
-# src/database/session.py - Database session management
+# src/database/session.py - Database session management with lazy loading
 import logging
 from contextlib import contextmanager
+from typing import Optional
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
@@ -11,12 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:
-    def __init__(self, auto_init=True):
+    def __init__(self, auto_init=False):
         self.engine = None
         self.Session = None
         self._initialized = False
-        if auto_init:
-            self._setup_database()
+        self._fallback_mode = False
+        # Lazy initialization by default to improve portability
     
     def _setup_database(self):
         """Setup database engine with connection pool"""
@@ -69,12 +70,14 @@ class DatabaseManager:
             # Create session factory
             self.Session = sessionmaker(bind=self.engine)
             self._initialized = True
+            self._fallback_mode = True
             
             logger.warning("Database initialized in fallback mode (SQLite in-memory)")
             
         except Exception as e:
             logger.error(f"Fallback database initialization failed: {e}")
             self._initialized = False
+            self._fallback_mode = False
     
     def _on_connect(self, dbapi_connection, connection_record):
         """Called when a new database connection is created"""
@@ -84,9 +87,18 @@ class DatabaseManager:
         """Called when a connection is checked out from the pool"""
         logger.debug("Database connection checked out from pool")
     
+    def ensure_initialized(self):
+        """Ensure database is initialized (lazy loading)"""
+        if not self._initialized:
+            self._setup_database()
+        return self._initialized
+    
     @contextmanager
     def get_session(self):
         """Get a database session with automatic cleanup"""
+        if not self.ensure_initialized():
+            raise RuntimeError("Database not available")
+            
         session = self.Session()
         try:
             yield session
@@ -100,20 +112,42 @@ class DatabaseManager:
     
     def get_session_factory(self):
         """Get session factory for dependency injection"""
+        if not self.ensure_initialized():
+            return None
         return self.Session
     
-    def health_check(self) -> bool:
-        """Check database connection health"""
-        if not self._initialized:
-            return False
+    def health_check(self) -> dict:
+        """Check database connection health with detailed status"""
+        # Try to initialize if not done yet
+        initialized = self.ensure_initialized()
+        
+        if not initialized:
+            return {
+                'status': 'unavailable',
+                'initialized': False,
+                'fallback_mode': False,
+                'error': 'Failed to initialize database'
+            }
             
         try:
             with self.get_session() as session:
-                session.execute("SELECT 1")
-            return True
+                from sqlalchemy import text
+                session.execute(text("SELECT 1"))
+            status = 'degraded' if self._fallback_mode else 'healthy'
+            return {
+                'status': status,
+                'initialized': True,
+                'fallback_mode': self._fallback_mode,
+                'database_url': str(self.engine.url).split('@')[0] + '@***' if self.engine else None
+            }
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
-            return False
+            return {
+                'status': 'unhealthy',
+                'initialized': True,
+                'fallback_mode': self._fallback_mode,
+                'error': str(e)
+            }
     
     def is_initialized(self) -> bool:
         """Check if database is initialized"""
@@ -121,9 +155,7 @@ class DatabaseManager:
     
     def is_fallback_mode(self) -> bool:
         """Check if running in fallback mode"""
-        if not self._initialized:
-            return False
-        return "sqlite:///:memory:" in str(self.engine.url)
+        return self._fallback_mode
     
     def close(self):
         """Close database engine"""
@@ -132,8 +164,8 @@ class DatabaseManager:
             logger.info("Database connections closed")
 
 
-# Global database manager instance
-db_manager = DatabaseManager()
+# Global database manager instance (lazy initialization)
+db_manager = DatabaseManager(auto_init=False)
 
 
 def get_db_session():
@@ -144,3 +176,8 @@ def get_db_session():
 def get_session_factory():
     """Get session factory"""
     return db_manager.get_session_factory()
+
+
+def init_database():
+    """Explicitly initialize database (for app startup)"""
+    return db_manager.ensure_initialized()

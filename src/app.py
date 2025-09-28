@@ -1,11 +1,13 @@
-# src/app.py - Flask application main entry point
+# src/app.py - Flask application main entry point with improved portability
 import logging
 import time
+import os
 from flask import Flask, request, g
 from flask_cors import CORS
 from config.settings import settings
-from src.database import db_manager, get_session_factory
+from src.database import db_manager, get_session_factory, init_database
 from src.api.stock_api import stock_bp
+from src.api.metrics import metrics_bp, before_request_metrics, after_request_metrics
 import src.api.stock_api as stock_api_module
 from src.utils.logger import setup_logger, RequestLogger
 from src.utils.error_handler import register_error_handlers
@@ -13,37 +15,50 @@ from src.middleware.rate_limiter import RateLimiter, get_redis_client
 from src.middleware.cache import CacheManager
 from src.middleware.auth import AuthMiddleware
 
-logger = setup_logger('stock_api', 'app.log', logging.INFO)
+# Configure logging based on settings
+log_level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
+log_file = 'app.log' if settings.LOG_TO_FILE else None
+logger = setup_logger('stock_api', log_file, log_level)
 
 
 def create_app():
-    """Application factory"""
+    """Application factory with improved portability"""
     app = Flask(__name__)
     
-    # Enable CORS for frontend
-    CORS(app, origins=['http://localhost:3000', 'http://127.0.0.1:3000'])
+    # Configure CORS with environment variable support
+    cors_origins = settings.get_cors_origins()
+    CORS(app, origins=cors_origins)
+    logger.info(f"CORS configured for origins: {cors_origins}")
     
-    # Database setup - using managed database instance with fallback
-    if not db_manager.is_initialized():
-        logger.error("Database initialization failed completely")
-        raise RuntimeError("Database initialization failed")
-    
-    if db_manager.is_fallback_mode():
-        logger.warning("Running in database fallback mode")
-    
-    session_factory = get_session_factory()
-    
-    # Initialize Redis and middleware
+    # Database setup with graceful degradation
     try:
-        redis_client = get_redis_client()
-        rate_limiter = RateLimiter(redis_client)
-        cache_manager = CacheManager(redis_client)
-        
-        app.rate_limiter = rate_limiter
-        app.cache_manager = cache_manager
-        logger.info("Redis middleware initialized")
+        init_database()
+        session_factory = get_session_factory()
+        if db_manager.is_fallback_mode():
+            logger.warning("Running in database fallback mode")
+        else:
+            logger.info("Database initialized successfully")
     except Exception as e:
-        logger.warning(f"Redis unavailable, middleware disabled: {e}")
+        logger.error(f"Database initialization failed: {e}")
+        # Continue with degraded functionality rather than failing completely
+        session_factory = None
+    
+    # Initialize Redis and middleware (optional based on configuration)
+    if settings.USE_REDIS and not settings.OFFLINE_MODE:
+        try:
+            redis_client = get_redis_client()
+            rate_limiter = RateLimiter(redis_client)
+            cache_manager = CacheManager(redis_client)
+            
+            app.rate_limiter = rate_limiter
+            app.cache_manager = cache_manager
+            logger.info("Redis middleware initialized")
+        except Exception as e:
+            logger.warning(f"Redis unavailable, middleware disabled: {e}")
+            app.rate_limiter = None
+            app.cache_manager = None
+    else:
+        logger.info("Redis disabled by configuration or offline mode")
         app.rate_limiter = None
         app.cache_manager = None
     
@@ -52,11 +67,12 @@ def create_app():
     stock_api_module.cache_manager = getattr(app, 'cache_manager', None)
     stock_api_module.rate_limiter = getattr(app, 'rate_limiter', None)
     
-    # Request timing middleware
+    # Request timing and metrics middleware
     @app.before_request
     def before_request():
         g.start_time = time.time()
         RequestLogger.log_request(logger, request)
+        before_request_metrics()
     
     @app.after_request
     def after_request(response):
@@ -64,6 +80,9 @@ def create_app():
             duration_ms = (time.time() - g.start_time) * 1000
             RequestLogger.log_response(logger, response, duration_ms)
             response.headers['X-Response-Time'] = f"{duration_ms:.2f}ms"
+        
+        # Record metrics
+        response = after_request_metrics(response)
         return response
     
     # Initialize authentication middleware
@@ -74,6 +93,7 @@ def create_app():
     
     # Register blueprints
     app.register_blueprint(stock_bp)
+    app.register_blueprint(metrics_bp)
     
     # Root endpoint
     @app.route('/')

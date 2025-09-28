@@ -1,16 +1,22 @@
-# src/api/stock_api.py - Stock query API endpoints
+# src/api/stock_api.py - Stock query API endpoints with offline mode support
 import asyncio
 from datetime import datetime, timedelta
 from typing import List, Optional
 from flask import Blueprint, jsonify, request, g
 from sqlalchemy.orm import sessionmaker
 from src.models.stock import Stock, StockPrice
-from src.services.data_collector import DataCollector
-from src.services.recommendation_engine import RecommendationEngine
+try:
+    from src.services.recommendation_engine import RecommendationEngine
+except ImportError:
+    from src.services.simple_recommendation import SimpleRecommendationEngine as RecommendationEngine
+from src.services.mock_data import mock_data_service
 from src.middleware.validator import require_stock_code, InputValidator
 from src.database import get_db_session
 from src.utils.exceptions import DatabaseError, ValidationError
 from config.settings import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 stock_bp = Blueprint('stocks', __name__, url_prefix='/api/stocks')
 
@@ -18,6 +24,18 @@ stock_bp = Blueprint('stocks', __name__, url_prefix='/api/stocks')
 session_factory = None
 cache_manager = None
 rate_limiter = None
+
+
+def is_offline_mode() -> bool:
+    """Check if running in offline mode"""
+    return settings.is_offline_mode()
+
+
+def get_data_source(prefer_mock: bool = False):
+    """Get appropriate data source based on mode"""
+    if is_offline_mode() or prefer_mock:
+        return mock_data_service
+    return None  # Use database/external APIs
 
 
 def get_current_session():
@@ -33,7 +51,13 @@ def get_current_session():
 @stock_bp.before_request
 def before_request():
     """Initialize database session for each request"""
-    pass  # Session is created on-demand in get_current_session()
+    # Create session on demand to improve compatibility
+    if session_factory:
+        try:
+            g.db_session = session_factory()
+        except Exception as e:
+            logger.warning(f"Failed to create database session: {e}")
+            g.db_session = None
 
 
 @stock_bp.teardown_request
@@ -46,10 +70,17 @@ def teardown_request(exception=None):
                 db_session.rollback()
             else:
                 db_session.commit()
-        except Exception:
-            db_session.rollback()
+        except Exception as e:
+            logger.warning(f"Session cleanup error: {e}")
+            try:
+                db_session.rollback()
+            except:
+                pass
         finally:
-            db_session.close()
+            try:
+                db_session.close()
+            except:
+                pass
 
 
 @stock_bp.route('/<stock_code>', methods=['GET'])
@@ -316,8 +347,18 @@ def generate_recommendation(stock_code: str):
 def get_stock_analysis(stock_code: str):
     """Get comprehensive stock analysis"""
     try:
-        db_session = get_current_session()
         analysis_type = request.args.get('analysis_type', 'all')
+        
+        # Check if offline mode
+        if is_offline_mode():
+            logger.info(f"Using mock data for analysis: {stock_code}")
+            result = mock_data_service.get_stock_analysis(stock_code, analysis_type)
+            if not result:
+                return jsonify({'error': 'Stock not found in mock data'}), 404
+            return jsonify(result)
+        
+        # Normal database mode
+        db_session = get_current_session()
         
         # Get basic stock info
         stock = db_session.query(Stock).filter_by(code=stock_code).first()
@@ -381,6 +422,15 @@ def get_stock_analysis(stock_code: str):
 def get_realtime_data(stock_code: str):
     """Get real-time stock data"""
     try:
+        # Check if offline mode
+        if is_offline_mode():
+            logger.info(f"Using mock data for realtime: {stock_code}")
+            result = mock_data_service.get_realtime_data(stock_code)
+            if not result:
+                return jsonify({'error': 'Stock not found in mock data'}), 404
+            return jsonify(result)
+        
+        # Normal database mode
         db_session = get_current_session()
         
         # Get latest price data (in real implementation, this would come from live feed)
@@ -451,8 +501,6 @@ def get_historical_data(stock_code: str):
 def batch_analysis():
     """Batch analysis for multiple stocks"""
     try:
-        db_session = get_current_session()
-        
         data = request.get_json()
         if not data or 'stock_codes' not in data:
             raise ValidationError("Missing stock_codes in request")
@@ -465,6 +513,15 @@ def batch_analysis():
             raise ValidationError("Maximum 50 stocks per batch request")
         
         analysis_types = data.get('analysis_types', ['technical'])
+        
+        # Check if offline mode
+        if is_offline_mode():
+            logger.info(f"Using mock data for batch analysis: {len(stock_codes)} stocks")
+            result = mock_data_service.batch_analysis(stock_codes, analysis_types)
+            return jsonify(result)
+        
+        # Normal database mode
+        db_session = get_current_session()
         
         results = []
         for stock_code in stock_codes:
@@ -535,21 +592,53 @@ def batch_analysis():
 # Health check endpoint
 @stock_bp.route('/health', methods=['GET'])
 def health_check():
-    """API health check"""
-    try:
-        db_session = get_current_session()
-        
-        # Test database connection
-        stock_count = db_session.query(Stock).count()
-        
-        return jsonify({
-            'status': 'healthy',
-            'timestamp': datetime.now().isoformat(),
-            'database': 'connected',
-            'stock_count': stock_count
-        })
-    except Exception as e:
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e)
-        }), 500
+    """API health check with detailed status"""
+    from src.database import db_manager
+    
+    # Get database health status
+    db_health = db_manager.health_check()
+    
+    # Overall system status
+    overall_status = 'healthy'
+    if db_health['status'] == 'degraded':
+        overall_status = 'degraded'
+    elif db_health['status'] in ['unhealthy', 'unavailable']:
+        overall_status = 'unhealthy'
+    
+    response_data = {
+        'status': overall_status,
+        'timestamp': datetime.now().isoformat(),
+        'database': db_health,
+        'api': 'running'
+    }
+    
+    # Add stock count if database is available
+    if db_health['status'] in ['healthy', 'degraded']:
+        try:
+            db_session = get_current_session()
+            if db_session:
+                stock_count = db_session.query(Stock).count()
+                response_data['stock_count'] = stock_count
+        except Exception as e:
+            response_data['stock_count_error'] = str(e)
+    
+    # Add middleware status
+    response_data['middleware'] = {
+        'cache': 'available' if cache_manager else 'unavailable',
+        'rate_limiter': 'available' if rate_limiter else 'unavailable'
+    }
+    
+    # Add mode information
+    response_data['mode'] = {
+        'offline_mode': settings.OFFLINE_MODE,
+        'mock_data_enabled': settings.MOCK_DATA_ENABLED,
+        'use_redis': settings.USE_REDIS,
+        'deployment_mode': settings.DEPLOYMENT_MODE
+    }
+    
+    # Add available stocks count for offline mode
+    if is_offline_mode():
+        response_data['mock_stocks_available'] = len(mock_data_service.stocks)
+    
+    status_code = 200 if overall_status in ['healthy', 'degraded'] else 503
+    return jsonify(response_data), status_code

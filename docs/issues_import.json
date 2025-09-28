@@ -1,0 +1,141 @@
+[
+  {
+    "title": "W1-D1｜梳理请求链路与中间件",
+    "body": "验收标准:\n- 产出请求生命周期图 (before→view→after→error handler)\n- 标注 X-Request-ID、X-Response-Time 注入点\n产出物:\n- PNG/MD 架构图 + 1页说明",
+    "labels": ["learning-plan","week-1","backend","flask","observability"],
+    "milestone": "Week 1"
+  },
+  {
+    "title": "W1-D2｜实现 request-scoped Session 注入",
+    "body": "验收标准:\n- 修复 db_session 空引用\n- 请求结束释放连接, 异常回滚\n- 提交设计记录 (创建/回收时机、伪代码)\n产出物:\n- 代码变更 + 设计记录",
+    "labels": ["learning-plan","week-1","backend","flask","sqlalchemy"],
+    "milestone": "Week 1"
+  },
+  {
+    "title": "W1-D3｜统一错误响应与可观测信息",
+    "body": "验收标准:\n- 400/401/403/429/500/503 统一 JSON, 含 request_id\n- 新增/完善对应测试\n产出物:\n- 错误码对照表 + 测试",
+    "labels": ["learning-plan","week-1","backend","error-handling","testing"],
+    "milestone": "Week 1"
+  },
+  {
+    "title": "W1-D4｜完善 CORS/Headers/日志",
+    "body": "验收标准:\n- 所有响应含 X-Request-ID 与 X-Response-Time\n- 日志包含方法、路径、耗时、状态码\n产出物:\n- 配置说明 + 日志示例",
+    "labels": ["learning-plan","week-1","backend","logging","cors"],
+    "milestone": "Week 1"
+  },
+  {
+    "title": "W1-D5｜对齐文档与测试缺口",
+    "body": "验收标准:\n- 列出 /analysis,/realtime,/history 等缺口与优先级\n- 评审确认实现顺序\n产出物:\n- 缺口清单 (MD/Issues)",
+    "labels": ["learning-plan","week-1","planning","docs"],
+    "milestone": "Week 1"
+  },
+  {
+    "title": "W2-D1｜CRUD 与时间序列查询封装",
+    "body": "验收标准:\n- 最新价格、窗口查询、分页列表封装\n- 单测通过\n产出物:\n- 查询函数 + 测试",
+    "labels": ["learning-plan","week-2","backend","sqlalchemy","testing"],
+    "milestone": "Week 2"
+  },
+  {
+    "title": "W2-D2｜健康检查与降级策略",
+    "body": "验收标准:\n- DB 不可用应用可降级启动\n- /health 返回 degraded\n- 文档化 Postgres/SQLite 切换\n产出物:\n- 环境说明 + 行为定义",
+    "labels": ["learning-plan","week-2","backend","reliability","docs"],
+    "milestone": "Week 2"
+  },
+  {
+    "title": "W2-D3｜Session 生命周期治理",
+    "body": "验收标准:\n- 异常回滚、连接释放\n- 连接泄漏监控规则 (日志/metrics)\n产出物:\n- 治理说明 + 验证脚本",
+    "labels": ["learning-plan","week-2","backend","sqlalchemy","observability"],
+    "milestone": "Week 2"
+  },
+  {
+    "title": "W2-D4｜窗口与分页边界测试",
+    "body": "验收标准:\n- 覆盖空数据、边界日期、非法参数\n产出物:\n- 测试用例",
+    "labels": ["learning-plan","week-2","testing","backend"],
+    "milestone": "Week 2"
+  },
+  {
+    "title": "W2-D5｜测试复盘与修复计划",
+    "body": "验收标准:\n- pytest 报告清晰, 列出失败与修复计划\n产出物:\n- 测试报告 + 改进清单",
+    "labels": ["learning-plan","week-2","testing","planning"],
+    "milestone": "Week 2"
+  },
+  {
+    "title": "W3｜热点接口缓存与失效策略",
+    "body": "验收标准:\n- 命中率可观测 (日志/metrics)\n- 支持按 pattern 失效\n- Redis 不可用自动降级到 L1\n产出物:\n- 实现说明 + 验证手册",
+    "labels": ["learning-plan","week-3","redis","cache","observability"],
+    "milestone": "Week 3"
+  },
+  {
+    "title": "W3｜限流与响应头对齐",
+    "body": "验收标准:\n- 达上限返回 429, 带 X-RateLimit-* 头\n- 新增/完善测试\n产出物:\n- 测试用例 + 运行截图",
+    "labels": ["learning-plan","week-3","redis","rate-limit","testing"],
+    "milestone": "Week 3"
+  },
+  {
+    "title": "W4｜批量并发采集与回退",
+    "body": "验收标准:\n- Sina→Yahoo→Mock 回退链路生效\n- 批量异常不影响全局\n- 写库幂等\n产出物:\n- 并发/回退策略说明 + 日志样例",
+    "labels": ["learning-plan","week-4","asyncio","aiohttp","data-ingest"],
+    "milestone": "Week 4"
+  },
+  {
+    "title": "W4｜模拟数据模式 (本地/CI)",
+    "body": "验收标准:\n- 一键切换真实/模拟\n- CI 默认模拟跑测\n产出物:\n- 环境变量约定 + README 片段",
+    "labels": ["learning-plan","week-4","testing","ci","devx"],
+    "milestone": "Week 4"
+  },
+  {
+    "title": "W5｜特征提取与空值治理",
+    "body": "验收标准:\n- 技术指标与统计特征齐备\n- 缺失值策略稳定\n- 单测覆盖基础统计\n产出物:\n- 特征字典 (字段/含义/单位/范围)",
+    "labels": ["learning-plan","week-5","ml","features","pandas"],
+    "milestone": "Week 5"
+  },
+  {
+    "title": "W5｜训练/持久化/解释输出",
+    "body": "验收标准:\n- 训练 GBDT + 持久化模型与 scaler\n- SHAP TopN 因子可读化并入库\n- 基础精度与过拟合检查\n产出物:\n- 训练脚本 + 评估报告",
+    "labels": ["learning-plan","week-5","ml","sklearn","explainability"],
+    "milestone": "Week 5"
+  },
+  {
+    "title": "W6｜实现 /analysis 与 /batch_analysis",
+    "body": "验收标准:\n- 参数校验与限流齐备\n- 与 docs/API.md 一致\n- 主要测试通过\n产出物:\n- 接口说明更新 + 测试",
+    "labels": ["learning-plan","week-6","backend","api","testing"],
+    "milestone": "Week 6"
+  },
+  {
+    "title": "W6｜实现 /realtime 与 /history",
+    "body": "验收标准:\n- days 参数校验\n- 返回结构稳定\n产出物:\n- 接口实现 + 测试",
+    "labels": ["learning-plan","week-6","backend","api","data"],
+    "milestone": "Week 6"
+  },
+  {
+    "title": "W7｜修复调度器与清理任务",
+    "body": "验收标准:\n- 补齐 timedelta 与 StockPrice 导入\n- 市场时段策略生效\n- 异常告警\n产出物:\n- 调度策略文档与运行日志",
+    "labels": ["learning-plan","week-7","scheduler","ops","reliability"],
+    "milestone": "Week 7"
+  },
+  {
+    "title": "W7｜Docker 化与 compose 编排",
+    "body": "验收标准:\n- 一键启动 API+DB+Redis\n- 健康检查通过\n- 日志卷与轮转正常\n产出物:\n- 部署指南与故障排查",
+    "labels": ["learning-plan","week-7","deployment","docker","devops"],
+    "milestone": "Week 7"
+  },
+  {
+    "title": "W8｜连接池与慢查询治理",
+    "body": "验收标准:\n- 可观测连接池状态与慢查询\n- 提出优化建议并落地\n产出物:\n- 性能基线报告",
+    "labels": ["learning-plan","week-8","performance","database","observability"],
+    "milestone": "Week 8"
+  },
+  {
+    "title": "W8｜缓存/超时/熔断策略验证",
+    "body": "验收标准:\n- 超时返回与部分可用\n- 缓存策略验证\n- 降级流程清晰\n产出物:\n- 策略文档与演示记录",
+    "labels": ["learning-plan","week-8","performance","resilience","cache"],
+    "milestone": "Week 8"
+  },
+  {
+    "title": "W8｜文档与运维手册完善",
+    "body": "验收标准:\n- 更新 docs/API.md、docs/ARCHITECTURE.md 与学习文档\n- 新增本地开发与故障排查指南\n产出物:\n- 完整文档集",
+    "labels": ["learning-plan","week-8","docs","ops"],
+    "milestone": "Week 8"
+  }
+]
+

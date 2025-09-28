@@ -3,15 +3,15 @@ import logging
 import time
 from flask import Flask, request, g
 from flask_cors import CORS
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 from config.settings import settings
-from src.models.stock import Base
+from src.database import db_manager, get_session_factory
 from src.api.stock_api import stock_bp
 import src.api.stock_api as stock_api_module
 from src.utils.logger import setup_logger, RequestLogger
+from src.utils.error_handler import register_error_handlers
 from src.middleware.rate_limiter import RateLimiter, get_redis_client
 from src.middleware.cache import CacheManager
+from src.middleware.auth import AuthMiddleware
 
 logger = setup_logger('stock_api', 'app.log', logging.INFO)
 
@@ -23,12 +23,12 @@ def create_app():
     # Enable CORS for frontend
     CORS(app, origins=['http://localhost:3000', 'http://127.0.0.1:3000'])
     
-    # Database setup
-    engine = create_engine(settings.DATABASE_URL, echo=settings.DEBUG, pool_pre_ping=True)
-    Base.metadata.create_all(engine)
+    # Database setup - using managed database instance
+    if not db_manager.health_check():
+        logger.error("Database health check failed")
+        raise RuntimeError("Database connection failed")
     
-    Session = sessionmaker(bind=engine)
-    db_session = Session()
+    session_factory = get_session_factory()
     
     # Initialize Redis and middleware
     try:
@@ -45,7 +45,7 @@ def create_app():
         app.cache_manager = None
     
     # Inject dependencies into API module
-    stock_api_module.db_session = db_session
+    stock_api_module.session_factory = session_factory
     stock_api_module.cache_manager = getattr(app, 'cache_manager', None)
     stock_api_module.rate_limiter = getattr(app, 'rate_limiter', None)
     
@@ -63,6 +63,12 @@ def create_app():
             response.headers['X-Response-Time'] = f"{duration_ms:.2f}ms"
         return response
     
+    # Initialize authentication middleware
+    auth_middleware = AuthMiddleware(app)
+    
+    # Register error handlers
+    register_error_handlers(app)
+    
     # Register blueprints
     app.register_blueprint(stock_bp)
     
@@ -79,26 +85,7 @@ def create_app():
             }
         }
     
-    # Error handlers
-    @app.errorhandler(400)
-    def bad_request(error):
-        logger.warning(f"Bad request: {error}")
-        return {'error': 'Bad request', 'message': str(error)}, 400
-    
-    @app.errorhandler(404)
-    def not_found(error):
-        logger.warning(f"Not found: {request.path}")
-        return {'error': 'Resource not found'}, 404
-    
-    @app.errorhandler(429)
-    def rate_limit_exceeded(error):
-        logger.warning(f"Rate limit exceeded: {request.remote_addr}")
-        return {'error': 'Rate limit exceeded'}, 429
-    
-    @app.errorhandler(500)
-    def internal_error(error):
-        logger.error(f"Internal error: {error}", exc_info=True)
-        return {'error': 'Internal server error'}, 500
+    # Error handlers are now registered via register_error_handlers()
     
     logger.info("Stock Analysis System started successfully")
     return app

@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from config.settings import settings
 from src.models.stock import Stock, StockPrice
 from src.services.real_data_provider import RealDataManager, StockQuote
+from src.data_sources import SinaFinanceDataSource
+from src.utils.exceptions import DataSourceError
 
 
 class EnhancedDataCollector:
@@ -19,9 +21,11 @@ class EnhancedDataCollector:
         
         if use_real_data:
             self.data_manager = RealDataManager(primary_provider='yahoo')
+            self.sina_source = SinaFinanceDataSource()
             self.logger.info("Initialized with real data providers")
         else:
             self.data_manager = None
+            self.sina_source = None
             self.logger.info("Initialized with mock data")
     
     async def fetch_stock_list(self) -> List[Dict]:
@@ -56,6 +60,29 @@ class EnhancedDataCollector:
         if not self.use_real_data:
             return self._generate_mock_price(stock_code)
         
+        # Try Sina Finance first for A-share stocks
+        if stock_code.endswith(('.SZ', '.SH')):
+            try:
+                async with self.sina_source as sina:
+                    data = await sina.get_realtime_data(stock_code)
+                    return {
+                        "stock_code": data['stock_code'],
+                        "timestamp": datetime.now(),
+                        "open_price": data['open_price'],
+                        "high_price": data['high_price'],
+                        "low_price": data['low_price'],
+                        "close_price": data['current_price'],
+                        "volume": data['volume'],
+                        "turnover": data['turnover'],
+                        "change_pct": ((data['current_price'] - data['yesterday_close']) / 
+                                     data['yesterday_close'] * 100) if data['yesterday_close'] else 0
+                    }
+            except DataSourceError as e:
+                self.logger.warning(f"Sina Finance failed for {stock_code}: {e}")
+            except Exception as e:
+                self.logger.error(f"Unexpected error with Sina Finance for {stock_code}: {e}")
+        
+        # Fallback to Yahoo Finance for other stocks or if Sina fails
         try:
             quote = await self.data_manager.get_quote(stock_code)
             if not quote:

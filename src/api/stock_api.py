@@ -14,6 +14,8 @@ from src.middleware.validator import require_stock_code, InputValidator
 from src.database import get_db_session
 from src.utils.exceptions import DatabaseError, ValidationError
 from src.utils.sql_security import sql_injection_protection, SafeQueryBuilder
+from src.cache import initialize_cache, get_cache_manager, cached
+from src.monitoring import monitor_performance, monitor_db_operation
 from config.settings import settings
 import logging
 
@@ -25,6 +27,19 @@ stock_bp = Blueprint('stocks', __name__, url_prefix='/api/stocks')
 session_factory = None
 cache_manager = None
 rate_limiter = None
+
+# Initialize cache on module load
+def init_api_cache():
+    """Initialize cache for API endpoints"""
+    global cache_manager
+    try:
+        import redis
+        redis_client = redis.Redis(host='localhost', port=6379, db=0)
+        cache_manager = initialize_cache(redis_client=redis_client, memory_limit_mb=128)
+        logger.info("API cache initialized with Redis")
+    except Exception as e:
+        logger.warning(f"Redis unavailable, using memory-only cache: {e}")
+        cache_manager = initialize_cache(redis_client=None, memory_limit_mb=128)
 
 
 def is_offline_mode() -> bool:
@@ -223,6 +238,7 @@ def get_stock_factors(stock_code: str):
 
 @stock_bp.route('/scan', methods=['GET'])
 @sql_injection_protection
+@monitor_performance(operation_type='stock_scan', component='api')
 def scan_stocks():
     """Multi-condition stock screening"""
     try:
@@ -408,7 +424,8 @@ def generate_recommendation(stock_code: str):
 
 # New API endpoints to match documentation
 @stock_bp.route('/<stock_code>/analysis', methods=['GET'])
-@require_stock_code  
+@require_stock_code
+@cached(ttl=300, tags=['stock_analysis'], key_func=lambda stock_code: f"analysis:{stock_code}")
 def get_stock_analysis(stock_code: str):
     """Get comprehensive stock analysis"""
     try:
@@ -484,6 +501,7 @@ def get_stock_analysis(stock_code: str):
 
 @stock_bp.route('/<stock_code>/realtime', methods=['GET'])
 @require_stock_code
+@cached(ttl=30, tags=['realtime_data'], key_func=lambda stock_code: f"realtime:{stock_code}")
 def get_realtime_data(stock_code: str):
     """Get real-time stock data"""
     try:
@@ -523,6 +541,7 @@ def get_realtime_data(stock_code: str):
 
 @stock_bp.route('/<stock_code>/history', methods=['GET'])
 @require_stock_code
+@cached(ttl=3600, tags=['historical_data'], key_func=lambda stock_code: f"history:{stock_code}:{request.args.get('days', 30)}")
 def get_historical_data(stock_code: str):
     """Get historical price data"""
     try:
@@ -563,6 +582,7 @@ def get_historical_data(stock_code: str):
 
 
 @stock_bp.route('/batch_analysis', methods=['POST'])
+@monitor_performance(operation_type='batch_analysis', component='api')
 def batch_analysis():
     """Batch analysis for multiple stocks"""
     try:

@@ -10,6 +10,7 @@ try:
 except ImportError:
     from src.services.simple_recommendation import SimpleRecommendationEngine as RecommendationEngine
 from src.services.mock_data import mock_data_service
+import requests
 from src.middleware.validator import require_stock_code, InputValidator
 from src.database import get_db_session
 from src.utils.exceptions import DatabaseError, ValidationError
@@ -54,6 +55,204 @@ def get_data_source(prefer_mock: bool = False):
     return None  # Use database/external APIs
 
 
+def _convert_to_sina_code(stock_code: str) -> str:
+    """Convert standard code like 600580.SH to sh600580 for Sina."""
+    try:
+        code, market = stock_code.split('.')
+        market = market.upper()
+        prefix = 'sh' if market == 'SH' else 'sz'
+        return f"{prefix}{code}"
+    except Exception:
+        return stock_code
+
+
+def fetch_sina_realtime_sync(stock_code: str) -> Optional[dict]:
+    """Fetch realtime quote from Sina synchronously using requests with proper headers.
+    Returns a normalized dict or None on failure.
+    """
+    try:
+        sina_code = _convert_to_sina_code(stock_code)
+        url = f"https://hq.sinajs.cn/list={sina_code}"
+        headers = {
+            'Referer': 'https://finance.sina.com.cn',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+        }
+        resp = requests.get(url, headers=headers, timeout=settings.EXTERNAL_API_TIMEOUT)
+        if resp.status_code != 200:
+            return None
+        resp.encoding = 'gbk'
+        text = resp.text
+        start = text.find('"') + 1
+        end = text.rfind('"')
+        if start <= 0 or end <= start:
+            return None
+        data_str = text[start:end]
+        if not data_str:
+            return None
+        parts = data_str.split(',')
+        if len(parts) < 32:
+            return None
+        name = parts[0]
+        open_price = float(parts[1] or 0)
+        prev_close = float(parts[2] or 0)
+        price = float(parts[3] or 0)
+        high = float(parts[4] or 0)
+        low = float(parts[5] or 0)
+        volume = int(parts[8] or 0)
+        turnover = float(parts[9] or 0)
+        return {
+            'stock_code': stock_code,
+            'company_name': name,
+            'open_price': open_price,
+            'previous_close': prev_close,
+            'current_price': price,
+            'high_price': high,
+            'low_price': low,
+            'volume': volume,
+            'turnover': turnover,
+            'timestamp': datetime.now().isoformat(),
+            'source': 'sina'
+        }
+    except Exception as e:
+        logger.warning(f"Sina realtime fetch failed for {stock_code}: {e}")
+        return None
+
+
+# ---- Historical data and indicators (Tushare/Yahoo) ----
+def _try_fetch_history_tushare(stock_code: str, days: int = 120) -> Optional['pd.DataFrame']:
+    try:
+        import os
+        import pandas as pd
+        import tushare as ts
+        token = os.getenv('TUSHARE_TOKEN')
+        if not token:
+            return None
+        pro = ts.pro_api(token)
+        # Tushare expects ts_code like 600580.SH
+        end = datetime.now().strftime('%Y%m%d')
+        start = (datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d')
+        df = pro.daily(ts_code=stock_code, start_date=start, end_date=end)
+        if df is None or df.empty:
+            return None
+        df = df[['trade_date','open','high','low','close','vol']].copy()
+        df.rename(columns={'trade_date':'date','vol':'volume'}, inplace=True)
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date').reset_index(drop=True)
+        # Keep last N days (trading days)
+        return df.tail(days)
+    except Exception as e:
+        logger.warning(f"Tushare history fetch failed for {stock_code}: {e}")
+        return None
+
+
+def _try_fetch_history_yahoo(stock_code: str, days: int = 120) -> Optional['pd.DataFrame']:
+    try:
+        import pandas as pd
+        import yfinance as yf
+        # Convert to Yahoo code: SH->SS, SZ stays SZ
+        yf_symbol = stock_code.replace('.SH', '.SS')
+        period_days = max(60, days+10)
+        data = yf.download(yf_symbol, period=f"{period_days}d", interval='1d', progress=False, auto_adjust=False)
+        if data is None or data.empty:
+            return None
+        data = data.reset_index()
+        data.rename(columns={
+            'Date':'date','Open':'open','High':'high','Low':'low','Close':'close','Volume':'volume'
+        }, inplace=True)
+        return data.tail(days)
+    except Exception as e:
+        logger.warning(f"Yahoo history fetch failed for {stock_code}: {e}")
+        return None
+
+
+def _try_fetch_history_sina_kline(stock_code: str, days: int = 120) -> Optional['pd.DataFrame']:
+    """Fetch daily K-line from Sina openapi (real data)"""
+    try:
+        import pandas as pd
+        import requests
+        # Convert to sina code
+        sina_code = _convert_to_sina_code(stock_code)
+        url = 'https://quotes.sina.cn/cn/api/openapi.php/CN_MarketDataService.getKLineData'
+        params = {
+            'symbol': sina_code,
+            'scale': '240',  # daily bar
+            'ma': '5',
+            'datalen': str(max(60, days + 20))
+        }
+        headers = {'Referer': 'https://finance.sina.com.cn', 'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, params=params, headers=headers, timeout=settings.EXTERNAL_API_TIMEOUT)
+        if resp.status_code != 200:
+            return None
+        data = resp.json()
+        if not data or 'result' not in data or 'data' not in data['result'] or not data['result']['data']:
+            return None
+        rows = data['result']['data']
+        df = pd.DataFrame(rows)
+        # Normalize columns
+        df.rename(columns={'day':'date'}, inplace=True)
+        for col in ['open','high','low','close','volume']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        df['date'] = pd.to_datetime(df['date'])
+        df = df.sort_values('date').reset_index(drop=True)
+        return df.tail(days)
+    except Exception as e:
+        logger.warning(f"Sina kline history fetch failed for {stock_code}: {e}")
+        return None
+
+
+def fetch_history_df(stock_code: str, days: int = 120) -> Optional['pd.DataFrame']:
+    """Fetch real historical OHLCV with priority: Tushare -> Yahoo. Returns ascending by date."""
+    df = _try_fetch_history_tushare(stock_code, days)
+    if df is not None and not df.empty:
+        return df
+    df = _try_fetch_history_yahoo(stock_code, days)
+    if df is not None and not df.empty:
+        return df
+    df = _try_fetch_history_sina_kline(stock_code, days)
+    return df
+
+
+def _ema(series, span):
+    return series.ewm(span=span, adjust=False).mean()
+
+
+def compute_indicators(df: 'pd.DataFrame') -> dict:
+    """Compute MA/RSI/MACD from historical close series.
+    df columns: date, open, high, low, close, volume
+    """
+    import pandas as pd
+    s = df['close'].astype(float).copy()
+    out = {}
+    # MA
+    out['ma5'] = float(s.rolling(5).mean().iloc[-1]) if len(s) >= 5 else None
+    out['ma20'] = float(s.rolling(20).mean().iloc[-1]) if len(s) >= 20 else None
+    out['ma60'] = float(s.rolling(60).mean().iloc[-1]) if len(s) >= 60 else None
+    # RSI(14)
+    if len(s) >= 15:
+        delta = s.diff()
+        gain = delta.clip(lower=0.0)
+        loss = -delta.clip(upper=0.0)
+        roll_up = gain.rolling(14).mean()
+        roll_down = loss.rolling(14).mean()
+        rs = roll_up / (roll_down.replace(0, pd.NA))
+        rsi = 100 - (100 / (1 + rs))
+        out['rsi14'] = float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else None
+    else:
+        out['rsi14'] = None
+    # MACD (12,26,9)
+    if len(s) >= 26:
+        ema12 = _ema(s, 12)
+        ema26 = _ema(s, 26)
+        macd_line = ema12 - ema26
+        signal = _ema(macd_line, 9)
+        hist = macd_line - signal
+        out['macd'] = float(macd_line.iloc[-1]) if pd.notna(macd_line.iloc[-1]) else None
+        out['macd_signal'] = float(signal.iloc[-1]) if pd.notna(signal.iloc[-1]) else None
+        out['macd_hist'] = float(hist.iloc[-1]) if pd.notna(hist.iloc[-1]) else None
+    else:
+        out['macd'] = out['macd_signal'] = out['macd_hist'] = None
+    return out
 def get_current_session():
     """Get database session for current request"""
     if not hasattr(g, 'db_session'):
@@ -425,13 +624,81 @@ def generate_recommendation(stock_code: str):
 # New API endpoints to match documentation
 @stock_bp.route('/<stock_code>/analysis', methods=['GET'])
 @require_stock_code
-@cached(ttl=300, tags=['stock_analysis'], key_func=lambda stock_code: f"analysis:{stock_code}")
+@cached(ttl=300, tags=['stock_analysis'], key_func=lambda stock_code: f"analysis:{stock_code}:{request.args.get('analysis_type','all')}:{request.args.get('nocache','0')}")
 def get_stock_analysis(stock_code: str):
     """Get comprehensive stock analysis"""
     try:
         analysis_type = request.args.get('analysis_type', 'all')
         
-        # Check if offline mode
+        # Prefer real historical K-line for technical part when not offline
+        if not is_offline_mode():
+            import pandas as pd
+            hist = fetch_history_df(stock_code, days=120)
+            sina = fetch_sina_realtime_sync(stock_code)
+            if hist is not None and not hist.empty:
+                inds = compute_indicators(hist)
+                price = float(hist['close'].iloc[-1]) if 'close' in hist.columns else (sina.get('current_price') if sina else None)
+                result = {
+                    'stock_code': stock_code,
+                    'company_name': (sina.get('company_name') if sina else stock_code),
+                    'current_price': price,
+                    'analysis_timestamp': datetime.now().isoformat(),
+                }
+                if analysis_type in ['technical', 'all']:
+                    # Derive trend based on MA alignment and MACD sign
+                    ma20 = inds.get('ma20')
+                    macd = inds.get('macd')
+                    trend = 'neutral'
+                    if price and ma20 and macd is not None:
+                        if price > ma20 and macd > 0:
+                            trend = 'bullish'
+                        elif price < ma20 and macd < 0:
+                            trend = 'bearish'
+                    strength = 0.0
+                    if price and ma20:
+                        strength = min(1.0, abs(price - ma20) / (ma20 * 0.05))  # 距离MA20的相对偏离
+                    tech = {
+                        'overall_trend': trend,
+                        'trend_strength': round(strength, 2),
+                        'support_levels': [round(price * 0.95, 2), round(price * 0.9, 2)] if price else [],
+                        'resistance_levels': [round(price * 1.05, 2), round(price * 1.1, 2)] if price else [],
+                        'indicators': {
+                            'ma5': inds.get('ma5'),
+                            'ma20': inds.get('ma20'),
+                            'ma60': inds.get('ma60'),
+                            'rsi14': inds.get('rsi14'),
+                            'macd': inds.get('macd'),
+                            'macd_signal': inds.get('macd_signal'),
+                            'macd_hist': inds.get('macd_hist')
+                        },
+                        'source': 'tushare/yahoo'
+                    }
+                    result['technical_analysis'] = tech
+                if analysis_type in ['fundamental', 'all']:
+                    result['fundamental_analysis'] = {'degraded': True, 'note': '未接入真实基本面数据'}
+                if analysis_type in ['sentiment', 'all']:
+                    result['sentiment_analysis'] = {'degraded': True, 'note': '未接入真实情绪数据'}
+                if analysis_type == 'all':
+                    # Simple recommendation from technicals
+                    score = 0.0
+                    if result['technical_analysis']['overall_trend'] == 'bullish':
+                        score = 7.5 if (inds.get('rsi14') and inds['rsi14'] < 70) else 6.0
+                    elif result['technical_analysis']['overall_trend'] == 'neutral':
+                        score = 5.0
+                    else:
+                        score = 3.5 if (inds.get('rsi14') and inds['rsi14'] < 30) else 2.5
+                    action = '买入' if score >= 7 else '持有' if score >= 5 else '观望'
+                    risk = '低风险' if score >= 7 else '中等风险' if score >= 5 else '高风险'
+                    result['recommendation'] = {
+                        'action': action,
+                        'confidence': round(min(1.0, score / 10.0), 2),
+                        'score': round(score, 1),
+                        'risk_level': risk,
+                        'source': 'technical-indicators'
+                    }
+                return jsonify(result)
+        
+        # Offline or realtime failed → try mock to keep API usable
         if is_offline_mode():
             logger.info(f"Using mock data for analysis: {stock_code}")
             result = mock_data_service.get_stock_analysis(stock_code, analysis_type)
@@ -439,60 +706,28 @@ def get_stock_analysis(stock_code: str):
                 return jsonify({'error': 'Stock not found in mock data'}), 404
             return jsonify(result)
         
-        # Normal database mode
+        # Fallback: database info with neutral technicals
         db_session = get_current_session()
-        
-        # Get basic stock info
         stock = db_session.query(Stock).filter_by(code=stock_code).first()
         if not stock:
             return jsonify({'error': 'Stock not found'}), 404
-        
-        # Get latest price data
         latest_price = db_session.query(StockPrice).filter_by(
             stock_code=stock_code
         ).order_by(StockPrice.timestamp.desc()).first()
-        
+        price = latest_price.close_price if latest_price else None
         result = {
             'stock_code': stock_code,
             'company_name': stock.name,
-            'current_price': latest_price.close_price if latest_price else None,
-            'analysis_timestamp': datetime.now().isoformat()
-        }
-        
-        # Add analysis based on type
-        if analysis_type in ['technical', 'all']:
-            result['technical_analysis'] = {
+            'current_price': price,
+            'analysis_timestamp': datetime.now().isoformat(),
+            'technical_analysis': {
                 'overall_trend': 'neutral',
                 'trend_strength': 0.5,
-                'support_levels': [],
-                'resistance_levels': [],
+                'support_levels': [round(price * 0.95, 2), round(price * 0.9, 2)] if price else [],
+                'resistance_levels': [round(price * 1.05, 2), round(price * 1.1, 2)] if price else [],
                 'indicators': {}
             }
-        
-        if analysis_type in ['fundamental', 'all']:
-            result['fundamental_analysis'] = {
-                'valuation': {'pe_ratio': None, 'pb_ratio': None},
-                'profitability': {'roe': None, 'roa': None},
-                'growth': {'revenue_growth': None},
-                'financial_health': {'debt_ratio': None}
-            }
-        
-        if analysis_type in ['sentiment', 'all']:
-            result['sentiment_analysis'] = {
-                'overall_sentiment': 0.5,
-                'sentiment_level': 'neutral',
-                'news_sentiment': {'score': 0.5, 'article_count': 0},
-                'social_sentiment': {'score': 0.5, 'mention_count': 0}
-            }
-        
-        if analysis_type == 'all':
-            result['recommendation'] = {
-                'action': '持有',
-                'confidence': 0.5,
-                'score': 5.0,
-                'risk_level': '中等'
-            }
-        
+        }
         return jsonify(result)
         
     except Exception as e:
@@ -505,35 +740,50 @@ def get_stock_analysis(stock_code: str):
 def get_realtime_data(stock_code: str):
     """Get real-time stock data"""
     try:
-        # Check if offline mode
+        # Prefer real-time external source when not offline
+        if not is_offline_mode():
+            sina = fetch_sina_realtime_sync(stock_code)
+            if sina:
+                # Derive intraday change pct if possible
+                change_pct = 0.0
+                if sina.get('previous_close'):
+                    change_pct = (sina['current_price'] - sina['previous_close']) / sina['previous_close'] * 100
+                result = {
+                    'stock_code': stock_code,
+                    'current_price': sina['current_price'],
+                    'price_change': round(change_pct, 2),
+                    'volume': sina['volume'],
+                    'timestamp': sina['timestamp'],
+                    'market_status': 'unknown',
+                    'source': 'sina'
+                }
+                return jsonify(result)
+        
+        # Fallbacks
         if is_offline_mode():
-            logger.info(f"Using mock data for realtime: {stock_code}")
+            logger.info(f"Using mock data for realtime (offline): {stock_code}")
             result = mock_data_service.get_realtime_data(stock_code)
-            if not result:
-                return jsonify({'error': 'Stock not found in mock data'}), 404
-            return jsonify(result)
+            if result:
+                return jsonify(result)
         
-        # Normal database mode
         db_session = get_current_session()
+        if db_session:
+            latest_price = db_session.query(StockPrice).filter_by(
+                stock_code=stock_code
+            ).order_by(StockPrice.timestamp.desc()).first()
+            if latest_price:
+                result = {
+                    'stock_code': stock_code,
+                    'current_price': latest_price.close_price,
+                    'price_change': latest_price.change_pct,
+                    'volume': latest_price.volume,
+                    'timestamp': latest_price.timestamp.isoformat(),
+                    'market_status': 'closed',
+                    'source': 'database'
+                }
+                return jsonify(result)
         
-        # Get latest price data (in real implementation, this would come from live feed)
-        latest_price = db_session.query(StockPrice).filter_by(
-            stock_code=stock_code
-        ).order_by(StockPrice.timestamp.desc()).first()
-        
-        if not latest_price:
-            return jsonify({'error': 'No price data available'}), 404
-        
-        result = {
-            'stock_code': stock_code,
-            'current_price': latest_price.close_price,
-            'price_change': latest_price.change_pct,
-            'volume': latest_price.volume,
-            'timestamp': latest_price.timestamp.isoformat(),
-            'market_status': 'closed'  # This would be determined by market hours
-        }
-        
-        return jsonify(result)
+        return jsonify({'error': 'No price data available'}), 404
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500

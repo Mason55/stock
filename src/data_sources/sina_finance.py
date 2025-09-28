@@ -39,8 +39,13 @@ class SinaFinanceDataSource:
             sina_code = self._convert_stock_code(stock_code)
             
             url = f"{self.BASE_URL}/list={sina_code}"
+            # Add headers to avoid 403 from Sina
+            headers = {
+                'Referer': 'https://finance.sina.com.cn',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36'
+            }
             
-            async with self.session.get(url) as response:
+            async with self.session.get(url, headers=headers) as response:
                 if response.status != 200:
                     raise DataSourceError(f"HTTP {response.status} from Sina Finance")
                 

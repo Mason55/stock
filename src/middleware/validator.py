@@ -29,7 +29,7 @@ class InputValidator:
             return ""
         
         value = value.strip()[:max_length]
-        value = re.sub(r'[<>"\'%;()&+]', '', value)
+        value = re.sub(r'[<>"\'%;()&+/]', '', value)
         return value
     
     @staticmethod

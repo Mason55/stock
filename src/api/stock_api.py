@@ -13,6 +13,7 @@ from src.services.mock_data import mock_data_service
 from src.middleware.validator import require_stock_code, InputValidator
 from src.database import get_db_session
 from src.utils.exceptions import DatabaseError, ValidationError
+from src.utils.sql_security import sql_injection_protection, SafeQueryBuilder
 from config.settings import settings
 import logging
 
@@ -221,6 +222,7 @@ def get_stock_factors(stock_code: str):
 
 
 @stock_bp.route('/scan', methods=['GET'])
+@sql_injection_protection
 def scan_stocks():
     """Multi-condition stock screening"""
     try:
@@ -243,14 +245,55 @@ def scan_stocks():
         
         stocks = query.limit(1000).all()  # Get base stocks
         
+        if not stocks:
+            return jsonify({
+                'total_found': 0,
+                'stocks': []
+            })
+        
+        # 优化: 批量查询最新价格数据，避免N+1查询问题
+        stock_codes = [stock.code for stock in stocks]
+        
+        # 使用子查询获取每个股票的最新价格
+        from sqlalchemy import func
+        latest_price_subquery = db_session.query(
+            StockPrice.stock_code,
+            func.max(StockPrice.timestamp).label('max_timestamp')
+        ).filter(
+            StockPrice.stock_code.in_(stock_codes)
+        ).group_by(StockPrice.stock_code).subquery()
+        
+        # 连接查询获取最新价格详细信息
+        latest_prices = db_session.query(
+            StockPrice
+        ).join(
+            latest_price_subquery,
+            (StockPrice.stock_code == latest_price_subquery.c.stock_code) &
+            (StockPrice.timestamp == latest_price_subquery.c.max_timestamp)
+        ).all()
+        
+        # 创建价格查找字典，提高查找效率
+        price_dict = {price.stock_code: price for price in latest_prices}
+        
+        # 批量获取推荐数据（如果有推荐引擎）
+        recommendations_dict = {}
+        try:
+            rec_engine = RecommendationEngine(db_session)
+            # 尝试批量获取推荐（如果RecommendationEngine支持）
+            if hasattr(rec_engine, 'get_batch_recommendations'):
+                recommendations_dict = rec_engine.get_batch_recommendations(stock_codes)
+            else:
+                # 如果不支持批量，至少缓存引擎实例
+                pass
+        except Exception as e:
+            logger.warning(f"Recommendation engine initialization failed: {e}")
+            rec_engine = None
+        
         results = []
-        rec_engine = RecommendationEngine(db_session)
         
         for stock in stocks:
-            # Get latest price
-            latest_price = db_session.query(StockPrice).filter_by(
-                stock_code=stock.code
-            ).order_by(StockPrice.timestamp.desc()).first()
+            # 从缓存字典中获取价格数据
+            latest_price = price_dict.get(stock.code)
             
             if not latest_price:
                 continue
@@ -263,22 +306,32 @@ def scan_stocks():
             if min_volume and latest_price.volume < min_volume:
                 continue
             
-            # Get recommendation
-            recommendation = rec_engine.get_latest_recommendation(stock.code)
-            if recommendation:
-                # Apply recommendation filters
-                if action_filter and recommendation['action'] != action_filter:
-                    continue
-                if recommendation['confidence'] < min_confidence:
-                    continue
+            # Get recommendation (优化后)
+            recommendation = None
+            if rec_engine:
+                if stock.code in recommendations_dict:
+                    recommendation = recommendations_dict[stock.code]
+                else:
+                    # Fallback to individual query if batch not available
+                    try:
+                        recommendation = rec_engine.get_latest_recommendation(stock.code)
+                    except Exception as e:
+                        logger.warning(f"Failed to get recommendation for {stock.code}: {e}")
+                
+                if recommendation:
+                    # Apply recommendation filters
+                    if action_filter and recommendation.get('action') != action_filter:
+                        continue
+                    if recommendation.get('confidence', 0) < min_confidence:
+                        continue
             
             results.append({
                 'code': stock.code,
                 'name': stock.name,
                 'industry': stock.industry,
-                'current_price': latest_price.close_price,
-                'change_pct': latest_price.change_pct,
-                'volume': latest_price.volume,
+                'current_price': float(latest_price.close_price),
+                'change_pct': float(latest_price.change_pct) if latest_price.change_pct else 0.0,
+                'volume': int(latest_price.volume) if latest_price.volume else 0,
                 'recommendation': recommendation
             })
             
@@ -295,6 +348,7 @@ def scan_stocks():
 
 
 @stock_bp.route('/list', methods=['GET'])
+@sql_injection_protection
 def list_stocks():
     """Get list of all available stocks"""
     try:

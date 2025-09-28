@@ -62,6 +62,7 @@ case $BUILD_TYPE in
         docker build \
             --platform "$PLATFORM" \
             --build-arg INSTALL_ML=true \
+            -f build/docker/Dockerfile \
             -t "$TAG:latest" \
             -t "$TAG:full" \
             .
@@ -70,7 +71,7 @@ case $BUILD_TYPE in
         echo "📦 Building minimal image..."
         docker build \
             --platform "$PLATFORM" \
-            -f Dockerfile.minimal \
+            -f build/docker/Dockerfile.minimal \
             -t "$TAG:minimal" \
             .
         ;;
@@ -80,13 +81,14 @@ case $BUILD_TYPE in
         docker build \
             --platform "$PLATFORM" \
             --build-arg INSTALL_ML=true \
+            -f build/docker/Dockerfile \
             -t "$TAG:latest" \
             -t "$TAG:full" \
             .
         # Minimal image
         docker build \
             --platform "$PLATFORM" \
-            -f Dockerfile.minimal \
+            -f build/docker/Dockerfile.minimal \
             -t "$TAG:minimal" \
             .
         ;;

@@ -18,13 +18,13 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency files
-COPY requirements*.txt constraints.txt ./
+COPY build/requirements/*.txt ./
 
 # Install dependencies based on build arg
 RUN if [ "$INSTALL_ML" = "true" ] ; then \
-        pip install --no-cache-dir -r requirements.txt -c constraints.txt ; \
+        pip install --no-cache-dir -r production.txt -c constraints.txt ; \
     else \
-        pip install --no-cache-dir -r requirements-minimal.txt -c constraints.txt ; \
+        pip install --no-cache-dir -r minimal.txt -c constraints.txt ; \
     fi
 
 # Runtime stage

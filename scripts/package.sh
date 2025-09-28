@@ -55,19 +55,19 @@ echo "Platform: $PLATFORM"
 # Select requirements file
 case $BUILD_TYPE in
     base)
-        REQ_FILE="requirements-base.txt"
+        REQ_FILE="build/requirements/base.txt"
         ;;
     ml)
-        REQ_FILE="requirements-ml.txt"
+        REQ_FILE="build/requirements/ml.txt"
         ;;
     dev)
-        REQ_FILE="requirements-dev.txt"
+        REQ_FILE="build/requirements/dev.txt"
         ;;
     minimal)
-        REQ_FILE="requirements-minimal.txt"
+        REQ_FILE="build/requirements/minimal.txt"
         ;;
     full)
-        REQ_FILE="requirements.txt"
+        REQ_FILE="build/requirements/production.txt"
         ;;
     *)
         echo "❌ Unknown package type: $BUILD_TYPE"
@@ -88,7 +88,7 @@ echo "📋 Using requirements file: $REQ_FILE"
 echo "⬇️  Downloading wheels..."
 pip wheel \
     -r "$REQ_FILE" \
-    -c constraints.txt \
+    -c build/requirements/constraints.txt \
     -w "$WHEELS_DIR" \
     --platform "$PLATFORM" \
     --no-deps || true  # Continue even if some wheels fail
@@ -97,7 +97,7 @@ pip wheel \
 echo "⬇️  Downloading platform-independent wheels..."
 pip wheel \
     -r "$REQ_FILE" \
-    -c constraints.txt \
+    -c build/requirements/constraints.txt \
     -w "$WHEELS_DIR" \
     --no-deps || true
 
@@ -113,7 +113,7 @@ if [ "\$1" = "--upgrade" ]; then
 fi
 
 echo "📦 Installing from local wheels..."
-pip install \$UPGRADE --no-index --find-links . -r ../$REQ_FILE -c ../constraints.txt
+pip install \$UPGRADE --no-index --find-links . -r ../\$REQ_FILE -c ../build/requirements/constraints.txt
 
 echo "✅ Installation completed!"
 EOF
@@ -122,7 +122,7 @@ chmod +x "$WHEELS_DIR/install.sh"
 
 # Create requirements for wheel installation
 cp "$REQ_FILE" "$WHEELS_DIR/"
-cp constraints.txt "$WHEELS_DIR/"
+cp build/requirements/constraints.txt "$WHEELS_DIR/"
 
 # Show summary
 echo "📊 Package summary:"

@@ -12,7 +12,7 @@ git clone <your-repo-url>
 cd stock
 
 # 2. 安装最小依赖
-pip install -r requirements-minimal.txt
+pip install -r build/requirements/minimal.txt
 
 # 3. 设置环境变量
 export DATABASE_URL="sqlite:///dev.db"
@@ -32,10 +32,10 @@ curl http://localhost:5000/api/stocks/health
 ### 最小镜像 (无ML依赖)
 ```bash
 # 构建最小镜像
-docker build -f Dockerfile.minimal -t stock-minimal .
+./scripts/build.sh --type minimal
 
 # 运行
-docker run -p 5000:5000 -e OFFLINE_MODE=true stock-minimal
+docker run -p 5000:5000 -e OFFLINE_MODE=true stock-analysis:minimal
 
 # 测试
 curl http://localhost:5000/api/stocks/health
@@ -63,7 +63,7 @@ source venv/bin/activate  # Linux/Mac
 # 或 venv\Scripts\activate  # Windows
 
 # 2. 安装开发依赖
-pip install -r requirements-dev.txt
+pip install -r build/requirements/dev.txt
 
 # 3. 复制环境配置
 cp .env.example .env
@@ -77,13 +77,13 @@ python src/app.py
 ### 使用Docker Compose
 ```bash
 # 启动所有服务 (PostgreSQL + Redis + API)
-docker-compose up -d
+docker-compose -f build/docker/docker-compose.yml up -d
 
 # 查看日志
 docker-compose logs -f api
 
 # 停止服务
-docker-compose down
+docker-compose -f build/docker/docker-compose.yml down
 ```
 
 ## 🧪 测试系统
@@ -146,7 +146,7 @@ python src/app.py
 ### 仅基础功能 (无ML)
 ```bash
 # 安装基础依赖
-pip install -r requirements-base.txt
+pip install -r build/requirements/base.txt
 
 # 设置配置
 export DATABASE_URL="sqlite:///stock.db"
@@ -186,10 +186,10 @@ python src/app.py
 2. **依赖安装失败**
    ```bash
    # 使用最小依赖
-   pip install -r requirements-minimal.txt
+   pip install -r build/requirements/minimal.txt
    
    # 或使用约束版本
-   pip install -r requirements-base.txt -c constraints.txt
+   pip install -r build/requirements/base.txt -c build/requirements/constraints.txt
    ```
 
 3. **端口冲突**

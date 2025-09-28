@@ -10,10 +10,10 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean
 
 # Copy minimal requirements
-COPY requirements-minimal.txt constraints.txt ./
+COPY build/requirements/minimal.txt build/requirements/constraints.txt ./
 
 # Install minimal Python dependencies
-RUN pip install --no-cache-dir -r requirements-minimal.txt -c constraints.txt
+RUN pip install --no-cache-dir -r minimal.txt -c constraints.txt
 
 # Copy application code
 COPY . .

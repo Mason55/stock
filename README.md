@@ -25,7 +25,7 @@
 ### 🚀 最简启动 (< 1分钟)
 ```bash
 # 无需数据库，使用模拟数据
-pip install -r requirements-minimal.txt
+pip install -r build/requirements/minimal.txt
 export OFFLINE_MODE=true DATABASE_URL=sqlite:///dev.db
 python src/app.py
 
@@ -36,17 +36,17 @@ curl http://localhost:5000/api/stocks/600900.SH
 ### 🐳 Docker启动 (< 2分钟)
 ```bash
 # 最小镜像
-docker build -f Dockerfile.minimal -t stock:minimal .
-docker run -p 5000:5000 -e OFFLINE_MODE=true stock:minimal
+./scripts/build.sh --type minimal
+docker run -p 5000:5000 -e OFFLINE_MODE=true stock-analysis:minimal
 
 # 完整部署
-docker-compose up -d
+docker-compose -f build/docker/docker-compose.yml up -d
 ```
 
 ### 🔧 开发环境
 ```bash
 git clone <repo-url> && cd stock
-pip install -r requirements-dev.txt
+pip install -r build/requirements/dev.txt
 cp .env.example .env  # 编辑配置
 python src/app.py
 ```
@@ -121,9 +121,11 @@ stock/
 │   └── utils/             # 工具函数
 ├── docs/                  # 文档
 ├── scripts/               # 脚本工具
-├── requirements*.txt      # 分层依赖文件
-├── Dockerfile*           # Docker构建文件
-└── docker-compose.yml    # 容器编排
+├── build/                 # 构建相关文件
+│   ├── docker/           # Docker相关文件
+│   └── requirements/     # 分层依赖文件
+├── pyproject.toml        # 项目配置
+└── examples/             # 示例代码
 ```
 
 ## 🔄 运行模式

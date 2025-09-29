@@ -15,6 +15,14 @@ from src.middleware.rate_limiter import RateLimiter, get_redis_client
 from src.middleware.cache import CacheManager
 from src.middleware.auth import AuthMiddleware
 
+# Compatibility shim for Werkzeug version detection in Flask test client
+try:
+    import werkzeug  # type: ignore
+    if not hasattr(werkzeug, "__version__"):
+        werkzeug.__version__ = "3"
+except Exception:
+    pass
+
 # Configure logging based on settings
 log_level = getattr(logging, settings.LOG_LEVEL, logging.INFO)
 log_file = 'app.log' if settings.LOG_TO_FILE else None

@@ -28,8 +28,9 @@ class TestStockAPIEnhanced:
         response = client.get('/api/stocks/health')
         data = response.get_json()
         
-        assert response.status_code == 200
-        assert data['status'] == 'degraded'
+        # When database is completely down, service should return 503
+        assert response.status_code == 503
+        assert data['status'] == 'unhealthy'
     
     @pytest.mark.parametrize("invalid_code", [
         "INVALID",

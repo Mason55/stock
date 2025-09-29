@@ -5,6 +5,12 @@ from sqlalchemy import Column, String, Float, DateTime, Integer, Text, Index, de
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from pydantic import BaseModel
+try:
+    # Pydantic v2
+    from pydantic import ConfigDict  # type: ignore
+    PYDANTIC_V2 = True
+except Exception:  # pragma: no cover
+    PYDANTIC_V2 = False
 
 Base = declarative_base()
 
@@ -70,8 +76,12 @@ class StockInfo(BaseModel):
     current_price: Optional[float]
     change_pct: Optional[float]
     
-    class Config:
-        orm_mode = True
+    # Pydantic v2 style
+    if PYDANTIC_V2:
+        model_config = ConfigDict(from_attributes=True)  # type: ignore
+    else:
+        class Config:  # type: ignore
+            orm_mode = True
 
 
 class RecommendationResponse(BaseModel):
@@ -82,5 +92,8 @@ class RecommendationResponse(BaseModel):
     reasoning: str
     timestamp: datetime
     
-    class Config:
-        orm_mode = True
+    if PYDANTIC_V2:
+        model_config = ConfigDict(from_attributes=True)  # type: ignore
+    else:
+        class Config:  # type: ignore
+            orm_mode = True

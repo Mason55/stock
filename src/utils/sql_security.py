@@ -13,12 +13,11 @@ class SQLInjectionDetector:
     
     # 常见SQL注入模式
     INJECTION_PATTERNS = [
-        r"(\b(union|select|insert|update|delete|drop|create|alter)\b)",
-        r"(['\";])",
-        r"(--|\#|/\*|\*/)",
-        r"(\bor\b\s+\b\d+\s*=\s*\d+)",
-        r"(\bunion\b\s+\bselect\b)",
-        r"(\b(exec|execute|sp_executesql)\b)",
+        r"(['\";])",                           # quotes and statement separators
+        r"(--|\#|/\*|\*/)",                    # comments
+        r"(\bor\b\s+\b\d+\s*=\s*\d+)",    # tautology
+        r"(\bunion\b\s+\bselect\b)",         # UNION SELECT
+        r"(\b(exec|execute|sp_executesql)\b)",  # execution functions
         r"(\binto\b\s+\boutfile\b)",
         r"(\bload_file\b|\binto\b\s+\bdumpfile\b)",
         r"(\bsleep\b\s*\(\s*\d+\s*\))",
@@ -183,7 +182,12 @@ def sql_injection_protection(func):
         from flask import request, jsonify
         
         # 获取客户端IP
-        client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR'))
+        
+        try:
+            client_ip = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR'))
+        except Exception:
+            client_ip = None
+
         
         # 检查IP是否被阻止
         if sql_security_middleware.is_ip_blocked(client_ip):
@@ -191,7 +195,12 @@ def sql_injection_protection(func):
             return jsonify({'error': 'Access denied'}), 403
         
         # 检查请求参数
-        if not sql_security_middleware.check_request_params(request.args.to_dict(), client_ip):
+        # 检查请求参数
+        try:
+            args_dict = request.args.to_dict()
+        except Exception:
+            args_dict = {}
+        if not sql_security_middleware.check_request_params(args_dict, client_ip or ''):
             logger.warning(f"SQL injection attempt blocked from {client_ip}")
             return jsonify({'error': 'Invalid request parameters'}), 400
         

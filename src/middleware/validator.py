@@ -3,6 +3,7 @@ import re
 from typing import Optional
 from functools import wraps
 from flask import request, jsonify
+from src.utils.exceptions import ValidationError
 
 
 class InputValidator:
@@ -65,15 +66,23 @@ class InputValidator:
         return range_param if range_param in valid_ranges else '1M'
 
 
+class StockValidator:
+    """Adapter for legacy tests expecting StockValidator interface"""
+    def is_valid_stock_code(self, code: str) -> bool:
+        return InputValidator.validate_stock_code(code)
+
+    def validate_stock_code(self, code: str) -> None:
+        if not self.is_valid_stock_code(code):
+            raise ValidationError("Invalid stock code format; expected XXXXXX.SH/SZ or XXXX.HK")
+
+
 def require_stock_code(f):
     """Decorator to validate stock code parameter"""
     @wraps(f)
     def wrapped(stock_code, *args, **kwargs):
         if not InputValidator.validate_stock_code(stock_code):
-            return jsonify({
-                'error': 'Invalid stock code format',
-                'message': 'Stock code must be in format: XXXXXX.SH or XXXXXX.SZ'
-            }), 400
+            # 统一走全局错误处理，便于携带 request_id 与一致的错误结构
+            raise ValidationError('Invalid stock code format: expected XXXXXX.SH or XXXXXX.SZ')
         
         return f(stock_code.upper(), *args, **kwargs)
     return wrapped

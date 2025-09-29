@@ -1,6 +1,16 @@
 # 技术改造优先级与可交付物
 
 ## 高优先（先做，影响闭环）
+- [x] /history 回退链路（DB→Tushare→Yahoo→新浪），统一 OHLCV 与 `source`
+- [x] 实时行情稳定性（新浪 headers/解析）
+- [x] 技术面改为真实K线（MA/RSI/MACD）
+- [x] Pydantic v2 兼容、ErrorHandler request_id、Validator 适配
+- [x] SQL 安全检测放宽误报并在无请求上下文降级
+- [ ] 历史与指标夜间落库（ETL + schema 扩展）
+- [ ] 技术指标扩展（BOLL/KDJ/ATR）与解释输出
+- [ ] 基本面/情绪数据接入（移除“降级”标注）
+- [ ] 热门标的预取与缓存预热（减少尾延迟/限流）
+- [ ] 最小 OMS 与前置风控（纸上交易）
 - [ ] 启动与数据库解耦 + request-scoped Session
   - 验收：无 Postgres 时可 SQLite 启动；/health degraded；请求结束提交/回滚并关闭。
 - [ ] 回测引擎与成本/规则完整
@@ -17,6 +27,19 @@
   - 验收：核心 SLO 告警；链路能追踪到订单级。
 - [ ] 模型持久化与 MLOps 初版
   - 验收：模型注册/加载/灰度；漂移监测与阈值告警。
+
+
+### 最近完成（2025-09-29）
+- /history 网络回退、技术指标基于真实K线、实时行情解析增强
+- Pydantic v2/错误处理/Validator 适配、/health 服务汇总
+- SQL 安全检测与测试稳定性（request shim）
+
+### 下一步建议（短期一周内）
+1) Nightly ETL：落库最近 N 日历史与指标，填充空洞并预热缓存
+2) 扩展技术指标并输出解释字段（阈值/背离/形态）
+3) 基本面/情绪数据 Provider 骨架与降级切换；统一 data source 管理
+4) 起草最小 OMS（下单/撤单 API + 前置风控）
+
 
 ## 低优先（完善生态与规模化）
 - [ ] 多经纪路由与执行算法家族（TWAP/VWAP/POV/IS）

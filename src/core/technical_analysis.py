@@ -43,15 +43,19 @@ class AdvancedTechnicalIndicators:
     dmi_pdi: Optional[float] = None  # +DI
     dmi_mdi: Optional[float] = None  # -DI
     dmi_adx: Optional[float] = None  # ADX
-    
+
     # 成交量指标
     obv: Optional[float] = None  # 能量潮
     volume_ma: Optional[float] = None
     volume_ratio: Optional[float] = None
-    
+
     # 支撑阻力
     support_level: Optional[float] = None
     resistance_level: Optional[float] = None
+
+    # 波动率
+    atr: Optional[float] = None
+    atr_percent: Optional[float] = None
     
     def to_dict(self) -> Dict[str, Optional[float]]:
         """转换为字典"""
@@ -145,13 +149,18 @@ class AdvancedTechnicalAnalyzer:
             indicators.dmi_pdi = pdi
             indicators.dmi_mdi = mdi
             indicators.dmi_adx = adx
-            
-            # 9. 成交量指标
+
+            # 9. ATR 波动率
+            atr = self._calculate_atr(high_array, low_array, price_array)
+            indicators.atr = atr
+            indicators.atr_percent = (atr / current_price * 100) if atr and current_price else None
+
+            # 10. 成交量指标
             indicators.obv = self._calculate_obv(price_array, volume_array)
             indicators.volume_ma = self._calculate_ma(volume_array, 5)
             indicators.volume_ratio = volume_array[-1] / indicators.volume_ma if indicators.volume_ma else 1.0
-            
-            # 10. 支撑阻力位
+
+            # 11. 支撑阻力位
             support, resistance = self._calculate_support_resistance(high_array, low_array, price_array)
             indicators.support_level = support
             indicators.resistance_level = resistance
@@ -260,19 +269,37 @@ class AdvancedTechnicalAnalyzer:
         """计算布林带"""
         if len(prices) < period:
             return None, None, None, None, None
-        
+
         recent_prices = prices[-period:]
         middle = np.mean(recent_prices)
         std = np.std(recent_prices)
-        
+
         upper = middle + (std_multiplier * std)
         lower = middle - (std_multiplier * std)
-        
+
         # 计算布林带宽度和位置百分比
         width = (upper - lower) / middle * 100
         percent_b = (current_price - lower) / (upper - lower) * 100 if upper != lower else 50
-        
+
         return float(upper), float(middle), float(lower), float(width), float(percent_b)
+
+    def _calculate_atr(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period: int = 14) -> Optional[float]:
+        """计算平均真实波幅 (ATR)"""
+        if len(closes) < period + 1:
+            return None
+
+        true_ranges = []
+        for idx in range(1, len(closes)):
+            tr1 = highs[idx] - lows[idx]
+            tr2 = abs(highs[idx] - closes[idx - 1])
+            tr3 = abs(lows[idx] - closes[idx - 1])
+            true_ranges.append(max(tr1, tr2, tr3))
+
+        if len(true_ranges) < period:
+            return None
+
+        recent_tr = true_ranges[-period:]
+        return float(np.mean(recent_tr))
     
     def _calculate_williams_r(self, highs: np.ndarray, lows: np.ndarray, closes: np.ndarray, period=14) -> Optional[float]:
         """计算威廉指标 %R"""
@@ -398,6 +425,7 @@ class AdvancedTechnicalAnalyzer:
     def analyze_technical_strength(self, indicators: AdvancedTechnicalIndicators, current_price: float) -> Dict[str, Any]:
         """分析技术面强弱"""
         signals = []
+        indicator_commentary: Dict[str, str] = {}
         strength_score = 0
         max_score = 0
         
@@ -407,12 +435,27 @@ class AdvancedTechnicalAnalyzer:
             if indicators.ma5 > indicators.ma20 > indicators.ma60:
                 signals.append("多头排列")
                 strength_score += 3
+                indicator_commentary['moving_average'] = (
+                    f"均线多头排列（MA5={indicators.ma5:.2f} > MA20={indicators.ma20:.2f} > MA60={indicators.ma60:.2f}），趋势强劲"
+                )
             elif indicators.ma5 > indicators.ma20:
                 signals.append("短期趋势向上")
                 strength_score += 1
+                indicator_commentary['moving_average'] = (
+                    f"短期均线走强（MA5={indicators.ma5:.2f} > MA20={indicators.ma20:.2f}），但长期趋势仍待确认"
+                )
             elif indicators.ma5 < indicators.ma20 < indicators.ma60:
                 signals.append("空头排列")
                 strength_score -= 3
+                indicator_commentary['moving_average'] = (
+                    f"均线空头排列（MA5={indicators.ma5:.2f} < MA20={indicators.ma20:.2f} < MA60={indicators.ma60:.2f}），趋势偏弱"
+                )
+            else:
+                indicator_commentary['moving_average'] = (
+                    f"均线呈缠绕状态（MA5={indicators.ma5:.2f}, MA20={indicators.ma20:.2f}, MA60={indicators.ma60:.2f}），方向未明"
+                )
+        elif indicators.ma5:
+            indicator_commentary['moving_average'] = "均线数据不足，仅能参考短期均线"
         
         # 2. MACD分析
         if indicators.macd and indicators.macd_signal:
@@ -420,9 +463,21 @@ class AdvancedTechnicalAnalyzer:
             if indicators.macd > indicators.macd_signal and indicators.macd > 0:
                 signals.append("MACD金叉向上")
                 strength_score += 2
+                indicator_commentary['macd'] = (
+                    f"MACD金叉（MACD={indicators.macd:.2f}, Signal={indicators.macd_signal:.2f}），动能偏多"
+                )
             elif indicators.macd < indicators.macd_signal and indicators.macd < 0:
                 signals.append("MACD死叉向下")
                 strength_score -= 2
+                indicator_commentary['macd'] = (
+                    f"MACD死叉（MACD={indicators.macd:.2f}, Signal={indicators.macd_signal:.2f}），动能偏空"
+                )
+            else:
+                indicator_commentary['macd'] = (
+                    f"MACD位于交叉附近（MACD={indicators.macd:.2f}, Signal={indicators.macd_signal:.2f}），方向待确认"
+                )
+        else:
+            indicator_commentary.setdefault('macd', "MACD数据不足")
         
         # 3. RSI分析
         if indicators.rsi:
@@ -430,11 +485,18 @@ class AdvancedTechnicalAnalyzer:
             if indicators.rsi < 30:
                 signals.append("RSI超卖")
                 strength_score += 1
+                indicator_commentary['rsi'] = f"RSI={indicators.rsi:.1f}，进入超卖区，或有反弹"
             elif indicators.rsi > 70:
                 signals.append("RSI超买")
                 strength_score -= 1
+                indicator_commentary['rsi'] = f"RSI={indicators.rsi:.1f}，处于超买区，注意回调"
             elif 40 <= indicators.rsi <= 60:
                 signals.append("RSI中性区间")
+                indicator_commentary['rsi'] = f"RSI={indicators.rsi:.1f}，维持中性"
+            else:
+                indicator_commentary['rsi'] = f"RSI={indicators.rsi:.1f}，处于过渡区"
+        else:
+            indicator_commentary['rsi'] = "RSI数据不足"
         
         # 4. KDJ分析
         if indicators.kdj_k and indicators.kdj_d:
@@ -442,9 +504,22 @@ class AdvancedTechnicalAnalyzer:
             if indicators.kdj_k > indicators.kdj_d and indicators.kdj_k < 80:
                 signals.append("KDJ金叉")
                 strength_score += 1
+                indicator_commentary['kdj'] = (
+                    f"KDJ金叉（K={indicators.kdj_k:.1f}, D={indicators.kdj_d:.1f}），短线动能回升"
+                )
             elif indicators.kdj_k < indicators.kdj_d and indicators.kdj_k > 20:
                 signals.append("KDJ死叉")
                 strength_score -= 1
+                indicator_commentary['kdj'] = (
+                    f"KDJ死叉（K={indicators.kdj_k:.1f}, D={indicators.kdj_d:.1f}），短线承压"
+                )
+            else:
+                signals.append("KDJ震荡")
+                indicator_commentary['kdj'] = (
+                    f"KDJ震荡（K={indicators.kdj_k:.1f}, D={indicators.kdj_d:.1f}），方向不明"
+                )
+        else:
+            indicator_commentary.setdefault('kdj', "KDJ数据不足")
         
         # 5. 布林带分析
         if indicators.bb_upper and indicators.bb_lower and indicators.bb_percent:
@@ -452,11 +527,26 @@ class AdvancedTechnicalAnalyzer:
             if indicators.bb_percent > 80:
                 signals.append("价格接近布林带上轨")
                 strength_score -= 1
+                indicator_commentary['bollinger'] = (
+                    f"价格逼近布林上轨（%B={indicators.bb_percent:.1f}%），需要防范回落"
+                )
             elif indicators.bb_percent < 20:
                 signals.append("价格接近布林带下轨")
                 strength_score += 1
+                indicator_commentary['bollinger'] = (
+                    f"价格触及布林下轨（%B={indicators.bb_percent:.1f}%），存在技术反弹机会"
+                )
             elif 40 <= indicators.bb_percent <= 60:
                 signals.append("价格在布林带中轨附近")
+                indicator_commentary['bollinger'] = (
+                    f"价格围绕布林中轨波动（%B={indicators.bb_percent:.1f}%），趋势均衡"
+                )
+            else:
+                indicator_commentary['bollinger'] = (
+                    f"价格处于布林带中段（%B={indicators.bb_percent:.1f}%），波动正常"
+                )
+        else:
+            indicator_commentary.setdefault('bollinger', "布林带数据不足")
         
         # 6. 成交量分析
         if indicators.volume_ratio:
@@ -464,10 +554,42 @@ class AdvancedTechnicalAnalyzer:
             if indicators.volume_ratio > 2:
                 signals.append("成交量显著放大")
                 strength_score += 1
+                indicator_commentary['volume'] = (
+                    f"成交量放大（量比={indicators.volume_ratio:.2f}），资金活跃"
+                )
             elif indicators.volume_ratio < 0.5:
                 signals.append("成交量萎缩")
                 strength_score -= 1
-        
+                indicator_commentary['volume'] = (
+                    f"成交量萎缩（量比={indicators.volume_ratio:.2f}），动能不足"
+                )
+            else:
+                indicator_commentary['volume'] = f"成交量平稳（量比={indicators.volume_ratio:.2f}）"
+        else:
+            indicator_commentary.setdefault('volume', "成交量数据不足")
+
+        # 7. ATR 波动率
+        if indicators.atr and indicators.atr_percent:
+            max_score += 1
+            if indicators.atr_percent <= 1.5:
+                signals.append("波动率温和")
+                strength_score += 1
+                indicator_commentary['atr'] = (
+                    f"ATR={indicators.atr:.2f}（占价{indicators.atr_percent:.2f}%），波动处于可控区间"
+                )
+            elif indicators.atr_percent >= 4:
+                signals.append("波动率走高")
+                strength_score -= 1
+                indicator_commentary['atr'] = (
+                    f"ATR={indicators.atr:.2f}（占价{indicators.atr_percent:.2f}%），波动显著放大"
+                )
+            else:
+                indicator_commentary['atr'] = (
+                    f"ATR={indicators.atr:.2f}（占价{indicators.atr_percent:.2f}%），波动正常"
+                )
+        else:
+            indicator_commentary.setdefault('atr', "ATR数据不足")
+
         # 计算强度百分比
         if max_score > 0:
             strength_percentage = (strength_score + max_score) / (2 * max_score) * 100
@@ -492,7 +614,8 @@ class AdvancedTechnicalAnalyzer:
             'max_score': max_score,
             'strength_percentage': strength_percentage,
             'overall_trend': overall_trend,
-            'technical_summary': f"技术面{overall_trend}，强度{strength_percentage:.1f}%"
+            'technical_summary': f"技术面{overall_trend}，强度{strength_percentage:.1f}%",
+            'indicator_commentary': indicator_commentary
         }
 
 

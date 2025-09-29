@@ -20,7 +20,7 @@
   - 创建自定义异常类 (`src/utils/exceptions.py`)
   - 实现集中错误处理 (`src/utils/error_handler.py`)
   - 分类业务异常类型 (4xx vs 5xx)
-  - 添加请求ID追踪
+  - 添加请求ID追踪（已统一读取 `g.request_id` 并在响应头透传 `X-Request-ID`）
 
 #### 第2阶段：短期改进
 - [x] **集成真实股票数据API**
@@ -44,7 +44,16 @@
 
 ## 🔄 进行中
 
-暂无进行中的任务
+- [ ] 历史数据与指标落库（夜间任务），避免线上频繁拉取与限流
+  - 位置：`src/scheduler.py` + 新增 ETL；表：`stock_prices` 扩展、`indicators` 新表
+- [ ] 技术指标扩展与解释（BOLL/KDJ/ATR 等），并在 `/analysis` 输出可操作解读
+  - 位置：`src/api/stock_api.py` 与（可选）`src/core/technical_analysis.py`
+- [ ] 基本面与情绪接入（Tushare 财报、新闻/NLP），去除“降级”标注
+  - 位置：新增 `src/data_sources/fundamentals_*.py`、`src/services/sentiment_provider.py`
+- [ ] 热门标的预取与缓存预热（减少尾延迟与限流）
+  - 位置：`src/scheduler.py` 调度 + `src/cache` 统一入口
+- [ ] 最小 OMS 与前置风控（纸上交易准备）
+  - 位置：新增下单/撤单 API、风控校验模块
 
 ---
 
@@ -57,6 +66,7 @@
   - 优化`src/api/stock_api.py`中的scan_stocks函数
   - 实现批量数据库查询
   - 添加查询性能监控
+  - 进展：已采用子查询+Join 批量拉取最新价，仍需压测与指标化（见 `scan_stocks`）
   
 - [ ] **数据库查询优化**
   - 创建必要的数据库索引
@@ -73,6 +83,7 @@
   - 强制使用参数化查询
   - 增强输入验证规则
   - 代码安全审计
+  - 进展：`validate_query_safety` 放宽对普通 `SELECT` 的误报；装饰器在无请求上下文时安全降级
   
 - [ ] **加强输入验证**
   - 完善股票代码验证 (`src/middleware/validator.py`)
@@ -89,6 +100,7 @@
   - Prometheus指标集成
   - 响应时间监控
   - 错误率统计
+  - 进展：`/metrics` 已有轻量文本版，Prometheus client 可选；需将关键 API 时延与错误率指标化
   
 - [ ] **实现异常告警机制**
   - 邮件/短信告警
@@ -307,6 +319,14 @@
 
 ## 📝 更新日志
 
+### 2025-09-29
+- /history：DB 为空时回退到 Tushare → Yahoo → 新浪 K 线（`src/api/stock_api.py:get_historical_data`），统一 OHLCV 与 `source` 字段。
+- 分析：使用真实历史K线计算 MA/RSI/MACD；技术趋势来源明确，`fundamental/sentiment` 暂标注降级待接入。
+- 实时：新浪 `hq.sinajs` 请求头与解析健壮性提升（GBK）。
+- 兼容：Pydantic v2 `from_attributes`；ErrorHandler 读取 `g.request_id`；Validator 提供 `StockValidator` 适配；Scheduler 清理；/health 增加 `services` 汇总。
+- 安全：SQL 安全检测避免将普通 `SELECT` 误判；在无请求上下文时装饰器降级安全处理。
+- 测试：为 `request` 提供 shim 便于 patch，提升测试稳定性。
+
 ### 2025-09-28
 - 完成第1-2阶段所有任务
 - 修复核心稳定性问题
@@ -337,6 +357,6 @@
 
 ---
 
-*最后更新: 2025-09-28*  
+*最后更新: 2025-09-29*  
 *负责人: Development Team*  
 *状态: 活跃维护中*

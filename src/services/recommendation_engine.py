@@ -50,12 +50,41 @@ class RecommendationEngine:
         rolling_std = df['close_price'].rolling(window=20).std()
         df['bb_upper'] = rolling_mean + (rolling_std * 2)
         df['bb_lower'] = rolling_mean - (rolling_std * 2)
-        df['bb_position'] = (df['close_price'] - df['bb_lower']) / (df['bb_upper'] - df['bb_lower'])
-        
+        band_width = df['bb_upper'] - df['bb_lower']
+        df['bb_position'] = np.where(
+            band_width != 0,
+            (df['close_price'] - df['bb_lower']) / band_width,
+            np.nan
+        )
+
+        # KDJ stochastic oscillator
+        low_min = df['low_price'].rolling(window=9).min()
+        high_max = df['high_price'].rolling(window=9).max()
+        rsv = np.where(
+            (high_max - low_min) == 0,
+            0,
+            (df['close_price'] - low_min) / (high_max - low_min) * 100
+        )
+        rsv_series = pd.Series(rsv, index=df.index).fillna(0)
+        df['kdj_k'] = rsv_series.ewm(alpha=1/3, adjust=False).mean()
+        df['kdj_d'] = df['kdj_k'].ewm(alpha=1/3, adjust=False).mean()
+        df['kdj_j'] = 3 * df['kdj_k'] - 2 * df['kdj_d']
+
+        # Average True Range
+        prev_close = df['close_price'].shift(1)
+        tr_components = pd.concat([
+            df['high_price'] - df['low_price'],
+            (df['high_price'] - prev_close).abs(),
+            (df['low_price'] - prev_close).abs()
+        ], axis=1)
+        true_range = tr_components.max(axis=1)
+        df['atr'] = true_range.rolling(window=14).mean()
+        df['atr_percent'] = (df['atr'] / df['close_price']).replace([np.inf, -np.inf], np.nan) * 100
+
         # Volume indicators
         df['volume_ma'] = df['volume'].rolling(window=20).mean()
         df['volume_ratio'] = df['volume'] / df['volume_ma']
-        
+
         return df
     
     def extract_features(self, stock_code: str, days_back: int = 60) -> Optional[Dict]:
@@ -99,11 +128,16 @@ class RecommendationEngine:
                 'macd': latest['macd'] if pd.notna(latest['macd']) else 0,
                 'bb_position': latest['bb_position'] if pd.notna(latest['bb_position']) else 0.5,
                 'volume_ratio': latest['volume_ratio'] if pd.notna(latest['volume_ratio']) else 1,
+                'kdj_k': latest['kdj_k'] if pd.notna(latest['kdj_k']) else 50,
+                'kdj_d': latest['kdj_d'] if pd.notna(latest['kdj_d']) else 50,
+                'kdj_j': latest['kdj_j'] if pd.notna(latest['kdj_j']) else 50,
+                'atr': latest['atr'] if pd.notna(latest['atr']) else 0,
+                'atr_percent': latest['atr_percent'] if pd.notna(latest['atr_percent']) else 0,
                 'volatility': df['change_pct'].std() if len(df) > 1 else 0,
                 'avg_volume': df['volume'].mean(),
                 'price_std': df['close_price'].std()
             }
-            
+
             return features
         except Exception as e:
             self.logger.error(f"Failed to extract features for {stock_code}: {e}")

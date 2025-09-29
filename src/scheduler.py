@@ -103,7 +103,8 @@ class DataScheduler:
         except Exception as e:
             logger.error(f"Scheduler error: {e}")
         finally:
-            self.db_session.close()
+            # Sessions are managed via db_manager context managers per task
+            pass
 
 
 if __name__ == "__main__":

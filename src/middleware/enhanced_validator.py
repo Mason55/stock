@@ -34,10 +34,11 @@ class EnhancedInputValidator:
     
     # 危险字符模式
     DANGEROUS_PATTERNS = [
-        re.compile(r'[<>"\'\%;()&+]'),  # XSS和注入字符
+        re.compile(r'<[^>]*>'),  # 去除HTML标签
+        re.compile(r'\([^)]*\)'),  # 去除括号及其中内容
+        re.compile(r'[<>"\'\/%;()&+]+'),  # XSS和注入字符（含/）
         re.compile(r'\b(script|javascript|vbscript)\b', re.IGNORECASE),
         re.compile(r'on\w+\s*=', re.IGNORECASE),  # 事件处理器
-        re.compile(r'(union|select|insert|update|delete|drop|exec)\b', re.IGNORECASE),
         re.compile(r'(eval|function|setTimeout|setInterval)\s*\(', re.IGNORECASE)
     ]
     
@@ -111,7 +112,7 @@ class EnhancedInputValidator:
         # 基础清理
         value = value.strip()[:max_length]
         
-        # 移除危险字符
+        # 移除危险内容/字符（顺序很重要：先去标签，再去括号内容，再去字符）
         if not allow_special_chars:
             for pattern in cls.DANGEROUS_PATTERNS:
                 value = pattern.sub('', value)
@@ -270,8 +271,23 @@ class EnhancedInputValidator:
         # 清理输入
         cleaned_industry = cls.sanitize_string(industry, 50)
         
-        # 模糊匹配行业名称
+        # 模糊匹配行业名称（含常见同义词）
         industry_lower = cleaned_industry.lower()
+        synonyms = {
+            'tech': 'Technology',
+            'financial': 'Finance',
+            'bank': 'Finance',
+            'health': 'Healthcare',
+            'med': 'Healthcare',
+            'energy': 'Energy',
+            'material': 'Materials',
+            'real estate': 'Real Estate',
+            'telecom': 'Telecommunications',
+            'utility': 'Utilities',
+        }
+        for key, target in synonyms.items():
+            if key in industry_lower:
+                return {'is_valid': True, 'normalized_industry': target, 'errors': []}
         for valid_industry in cls.VALID_INDUSTRIES:
             if industry_lower in valid_industry.lower() or valid_industry.lower() in industry_lower:
                 result['is_valid'] = True

@@ -2,7 +2,7 @@
 import logging
 import traceback
 from typing import Tuple, Dict, Any
-from flask import request, jsonify
+from flask import request, jsonify, g
 from werkzeug.exceptions import HTTPException
 from src.utils.exceptions import (
     StockAnalysisException, ValidationError, DataSourceError,
@@ -21,7 +21,7 @@ class ErrorHandler:
         """Handle different types of exceptions and return appropriate response"""
         
         # Generate request ID for tracking
-        request_id = getattr(request, 'id', 'unknown')
+        request_id = getattr(g, 'request_id', None) or getattr(request, 'id', 'unknown')
         
         # Log the error with context
         error_context = {

@@ -1,0 +1,82 @@
+# config/risk_rules.yaml - Risk management rules configuration
+
+# Real-time Risk Monitor Configuration
+risk_monitor:
+  # Daily loss circuit breaker
+  max_daily_loss_pct: 3.0          # Halt trading if daily loss > 3%
+
+  # Maximum drawdown from peak
+  max_drawdown_pct: 10.0           # Halt if drawdown > 10%
+
+  # Position concentration limit
+  max_position_pct: 15.0           # Max 15% in single stock
+
+  # Volatility monitoring
+  max_volatility_factor: 3.0       # Alert if move > 3x normal volatility
+
+  # Liquidity check
+  min_liquidity_ratio: 0.01        # Position should be < 1% of daily volume
+
+# Position Sizing Configuration
+position_sizer:
+  # Default method: 'fixed_ratio', 'kelly', 'volatility_adjusted', 'equal_weight'
+  method: 'volatility_adjusted'
+
+  # Fixed ratio method
+  default_ratio: 0.10              # 10% of capital per position
+
+  # Kelly criterion
+  kelly_fraction: 0.5              # Use half-Kelly for safety
+
+  # Position limits
+  max_position_size: 0.20          # Max 20% per position
+  min_position_size: 0.02          # Min 2% per position
+
+  # Volatility-adjusted
+  risk_per_trade: 0.01             # Risk 1% of capital per trade
+
+# Position Monitor Configuration
+position_monitor:
+  # Rebalancing
+  rebalance_threshold: 0.05        # Rebalance if drift > 5%
+  rebalance_interval: 3600         # Check every hour (seconds)
+
+  # Position tracking
+  track_unrealized_pnl: true
+  track_realized_pnl: true
+
+  # Alerts
+  alert_on_large_loss: true
+  large_loss_threshold: 0.05       # Alert if position loss > 5%
+
+# Risk Profiles (for different trading styles)
+profiles:
+  conservative:
+    risk_monitor:
+      max_daily_loss_pct: 1.5
+      max_drawdown_pct: 5.0
+      max_position_pct: 10.0
+    position_sizer:
+      method: 'fixed_ratio'
+      default_ratio: 0.05
+      max_position_size: 0.10
+
+  moderate:
+    risk_monitor:
+      max_daily_loss_pct: 3.0
+      max_drawdown_pct: 10.0
+      max_position_pct: 15.0
+    position_sizer:
+      method: 'volatility_adjusted'
+      default_ratio: 0.10
+      max_position_size: 0.20
+
+  aggressive:
+    risk_monitor:
+      max_daily_loss_pct: 5.0
+      max_drawdown_pct: 15.0
+      max_position_pct: 20.0
+    position_sizer:
+      method: 'kelly'
+      kelly_fraction: 0.75
+      max_position_size: 0.30

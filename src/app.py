@@ -11,6 +11,7 @@ from src.api.metrics import metrics_bp, before_request_metrics, after_request_me
 from src.utils.logger import setup_logger, RequestLogger
 from src.utils.error_handler import register_error_handlers
 from src.utils.di_container import init_container, get_container
+from src.utils.config_validator import ConfigValidator
 from src.middleware.rate_limiter import RateLimiter, get_redis_client
 from src.middleware.cache import CacheManager
 from src.middleware.auth import AuthMiddleware
@@ -32,7 +33,18 @@ logger = setup_logger('stock_api', log_file, log_level)
 def create_app():
     """Application factory with improved portability"""
     app = Flask(__name__)
-    
+
+    # Validate configuration
+    try:
+        ConfigValidator.validate_and_raise()
+    except Exception as e:
+        logger.error(f"Configuration validation failed: {e}")
+        # Continue with warning in development mode
+        if not settings.is_production():
+            logger.warning("Continuing with invalid configuration in development mode")
+        else:
+            raise
+
     # Configure CORS with environment variable support
     cors_origins = settings.get_cors_origins()
     CORS(app, origins=cors_origins)

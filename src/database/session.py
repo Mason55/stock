@@ -27,10 +27,10 @@ class DatabaseManager:
                 echo=settings.DEBUG,
                 pool_pre_ping=True,
                 poolclass=QueuePool,
-                pool_size=10,
-                max_overflow=20,
-                pool_recycle=3600,
-                pool_timeout=30
+                pool_size=settings.DB_POOL_SIZE,
+                max_overflow=settings.DB_MAX_OVERFLOW,
+                pool_recycle=settings.DB_POOL_RECYCLE,
+                pool_timeout=settings.DB_POOL_TIMEOUT
             )
             
             # Add connection event listeners
@@ -120,7 +120,7 @@ class DatabaseManager:
         """Check database connection health with detailed status"""
         # Try to initialize if not done yet
         initialized = self.ensure_initialized()
-        
+
         if not initialized:
             return {
                 'status': 'unavailable',
@@ -128,7 +128,7 @@ class DatabaseManager:
                 'fallback_mode': False,
                 'error': 'Failed to initialize database'
             }
-            
+
         try:
             with self.get_session() as session:
                 from sqlalchemy import text
@@ -138,7 +138,7 @@ class DatabaseManager:
                 'status': status,
                 'initialized': True,
                 'fallback_mode': self._fallback_mode,
-                'database_url': str(self.engine.url).split('@')[0] + '@***' if self.engine else None
+                'database_url': self._sanitize_url(str(self.engine.url)) if self.engine else None
             }
         except Exception as e:
             logger.error(f"Database health check failed: {e}")
@@ -148,6 +148,13 @@ class DatabaseManager:
                 'fallback_mode': self._fallback_mode,
                 'error': str(e)
             }
+
+    def _sanitize_url(self, url: str) -> str:
+        """Sanitize database URL by masking credentials"""
+        import re
+        # Match pattern: protocol://user:password@host:port/db
+        pattern = r'://([^:]+):([^@]+)@'
+        return re.sub(pattern, r'://\1:***@', url)
     
     def is_initialized(self) -> bool:
         """Check if database is initialized"""

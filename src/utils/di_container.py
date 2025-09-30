@@ -1,8 +1,8 @@
 # src/utils/di_container.py
 """Dependency injection container for managing service dependencies"""
-from typing import Optional, Any, Dict, Callable
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ServiceContainer:
     """Simple dependency injection container"""
+
     session_factory: Optional[Any] = None
     cache_manager: Optional[Any] = None
     rate_limiter: Optional[Any] = None

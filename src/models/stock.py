@@ -1,13 +1,15 @@
 # src/models/stock.py - Stock data models
 from datetime import datetime
 from typing import Optional
-from sqlalchemy import Column, String, Float, DateTime, Integer, Text, Index, desc
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship
+
 from pydantic import BaseModel
+from sqlalchemy import Column, DateTime, Float, Index, Integer, String, Text, desc
+from sqlalchemy.orm import declarative_base, relationship
+
 try:
     # Pydantic v2
     from pydantic import ConfigDict  # type: ignore
+
     PYDANTIC_V2 = True
 except Exception:  # pragma: no cover
     PYDANTIC_V2 = False
@@ -16,27 +18,27 @@ Base = declarative_base()
 
 
 class Stock(Base):
-    __tablename__ = 'stocks'
-    
+    __tablename__ = "stocks"
+
     code = Column(String(15), primary_key=True, index=True)  # Extended for HK stocks
     name = Column(String(100), nullable=False, index=True)
     exchange = Column(String(10), nullable=False, index=True)  # SH, SZ, HK
     industry = Column(String(100), index=True)
     market_cap = Column(Float)
-    currency = Column(String(3), default='CNY')  # CNY for A-share, HKD for HK
+    currency = Column(String(3), default="CNY")  # CNY for A-share, HKD for HK
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class StockPrice(Base):
-    __tablename__ = 'stock_prices'
+    __tablename__ = "stock_prices"
     __table_args__ = (
-        Index('idx_stock_code_timestamp', 'stock_code', 'timestamp'),
-        Index('idx_stock_code_timestamp_desc', 'stock_code', desc('timestamp')),
-        Index('idx_timestamp_desc', desc('timestamp')),
-        Index('idx_volume_price', 'volume', 'close_price'),
+        Index("idx_stock_code_timestamp", "stock_code", "timestamp"),
+        Index("idx_stock_code_timestamp_desc", "stock_code", desc("timestamp")),
+        Index("idx_timestamp_desc", desc("timestamp")),
+        Index("idx_volume_price", "volume", "close_price"),
     )
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     stock_code = Column(String(15), nullable=False, index=True)
     timestamp = Column(DateTime, nullable=False, index=True)
@@ -50,12 +52,12 @@ class StockPrice(Base):
 
 
 class StockRecommendation(Base):
-    __tablename__ = 'stock_recommendations'
+    __tablename__ = "stock_recommendations"
     __table_args__ = (
-        Index('idx_recommendations_code_timestamp_desc', 'stock_code', desc('timestamp')),
-        Index('idx_recommendations_action_confidence', 'action', 'confidence'),
+        Index("idx_recommendations_code_timestamp_desc", "stock_code", desc("timestamp")),
+        Index("idx_recommendations_action_confidence", "action", "confidence"),
     )
-    
+
     id = Column(Integer, primary_key=True, autoincrement=True)
     stock_code = Column(String(15), nullable=False, index=True)
     timestamp = Column(DateTime, default=datetime.utcnow, index=True)
@@ -75,11 +77,12 @@ class StockInfo(BaseModel):
     market_cap: Optional[float]
     current_price: Optional[float]
     change_pct: Optional[float]
-    
+
     # Pydantic v2 style
     if PYDANTIC_V2:
         model_config = ConfigDict(from_attributes=True)  # type: ignore
     else:
+
         class Config:  # type: ignore
             orm_mode = True
 
@@ -91,9 +94,10 @@ class RecommendationResponse(BaseModel):
     target_price: Optional[float]
     reasoning: str
     timestamp: datetime
-    
+
     if PYDANTIC_V2:
         model_config = ConfigDict(from_attributes=True)  # type: ignore
     else:
+
         class Config:  # type: ignore
             orm_mode = True

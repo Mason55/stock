@@ -2,7 +2,7 @@
 import logging
 import time
 import os
-from flask import Flask, request, g
+from flask import Flask, request, g, send_from_directory
 from flask_cors import CORS
 from config.settings import settings
 from src.database import db_manager, get_session_factory, init_database
@@ -32,7 +32,8 @@ logger = setup_logger('stock_api', log_file, log_level)
 
 def create_app():
     """Application factory with improved portability"""
-    app = Flask(__name__)
+    # Disable default static folder to avoid conflicts with frontend
+    app = Flask(__name__, static_folder=None)
 
     # Validate configuration
     try:
@@ -118,16 +119,34 @@ def create_app():
     # Register blueprints
     app.register_blueprint(stock_bp)
     app.register_blueprint(metrics_bp)
-    
-    # Root endpoint
+
+    # Frontend routes
     @app.route('/')
     def index():
+        """Serve frontend index page."""
+        frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
+        return send_from_directory(frontend_dir, 'index.html')
+
+    @app.route('/static/<path:path>')
+    def send_static(path):
+        """Serve frontend static files (CSS, JS)."""
+        frontend_static_dir = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            'frontend',
+            'static'
+        )
+        return send_from_directory(frontend_static_dir, path)
+
+    # API info endpoint
+    @app.route('/api')
+    def api_info():
         return {
             'message': 'Chinese Stock Analysis System API',
             'version': '1.0.0',
             'endpoints': {
                 'stocks': '/api/stocks',
                 'health': '/api/stocks/health',
+                'metrics': '/metrics',
                 'docs': 'https://github.com/your-org/stock-analysis-system'
             }
         }

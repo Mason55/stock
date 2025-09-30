@@ -204,32 +204,37 @@
 **测试状态**: 22/22 通过 ✅
 **提交记录**: (待提交)
 
-### 🚀 阶段4: 生产化 (1-2周)
+### ✅ 阶段4: 生产化 (基础完成)
 
 #### 4.1 监控与告警 🚨
-- [ ] **策略监控** (`src/monitoring/strategy_monitor.py`)
-  - 收益率监控 (实时/日度/累计)
-  - 信号质量统计 (胜率/盈亏比)
-  - 策略健康度评分
-  - Prometheus指标暴露
+- [x] **策略监控** (`src/monitoring/strategy_monitor.py`)
+  - 收益率监控 (总回报/日回报/年化回报)
+  - 风险指标 (夏普/波动率/最大回撤)
+  - 交易统计 (胜率/盈亏比/利润因子)
+  - 策略健康度评分 (0-100)
+  - Prometheus指标导出
 
-- [ ] **告警系统** (`src/monitoring/alert_manager.py`)
-  - 邮件告警 (SMTP)
-  - 企业微信/钉钉推送
-  - 异常日志聚合
-  - 告警规则引擎
+- [x] **告警系统** (`src/monitoring/alert_manager.py`)
+  - 多渠道推送 (日志/邮件/Webhook)
+  - 钉钉/企业微信集成
+  - 告警去重与限流 (5分钟冷却)
+  - 告警历史与统计
+  - 自定义处理器注册
 
 #### 4.2 实时数据流优化
-- [ ] **WebSocket行情订阅** (`src/data_sources/realtime_feed.py`)
-  - 新浪/腾讯/东财 WebSocket
-  - Tick级数据处理
-  - Level-2深度行情
-  - 行情队列管理
+- [x] **实时行情订阅** (`src/data_sources/realtime_feed.py`)
+  - 新浪财经实时Feed (基于轮询)
+  - 多标的订阅管理
+  - 数据回调机制
+  - 自动重连与心跳
+  - 腾讯/东财预留接口
 
-- [ ] **分钟K线生成** (`src/data_sources/kline_generator.py`)
-  - Tick聚合为1m/5m/15m
-  - 实时指标计算
-  - 数据落库
+- [x] **K线生成器** (`src/data_sources/kline_generator.py`)
+  - Tick聚合 (1m/5m/15m/30m/1h)
+  - 实时技术指标 (MA/EMA/Volume MA)
+  - K线完成回调
+  - 历史数据管理 (最多1000根)
+  - 数据库持久化预留
 
 #### 4.3 回测增强
 - [ ] **高级市场模拟** (`src/backtest/advanced_simulator.py`)
@@ -280,8 +285,9 @@
 - 回测功能: ✅ 完整 (事件驱动/组合管理/成本模型)
 - 实盘交易: ✅ 基础架构 (Mock Broker/实盘引擎/订单管理)
 - 策略数量: 3个 (双均线/均值回归/动量)
-- 数据频率: 日线 + 实时(准备)
+- 数据频率: 日线 + 实时 (Sina轮询/K线生成)
 - 风控完整度: 70% (熔断/仓位管理/再平衡)
+- 监控告警: ✅ 基础 (策略监控/多渠道告警)
 
 **MVP目标**:
 - 实盘下单: ✅ 支持
@@ -592,7 +598,12 @@
   - 仓位计算器 (position_sizer.py, Kelly/固定/波动率/等权)
   - 仓位监控 (position_monitor.py, 跟踪/再平衡/告警)
   - 风控配置 (risk_rules.yaml, 3档配置)
-  - 测试: 22/22 通过
+  - 测试: 22/22 通过 (commit: 1d1c06c)
+- **✅ 阶段4完成 (生产化-基础)**:
+  - 策略监控 (strategy_monitor.py, 健康度评分/Prometheus)
+  - 告警管理 (alert_manager.py, 邮件/钉钉/企微/限流)
+  - 实时行情 (realtime_feed.py, Sina轮询/订阅管理)
+  - K线生成 (kline_generator.py, 多周期/指标计算)
 
 ### 2025-09-29
 - /history：DB 为空时回退到 Tushare → Yahoo → 新浪 K 线（`src/api/stock_api.py:get_historical_data`），统一 OHLCV 与 `source` 字段。

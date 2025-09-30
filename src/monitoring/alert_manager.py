@@ -284,7 +284,7 @@ Metadata:
             raise
 
     def _send_dingtalk(self, alert: Alert):
-        """Send alert via DingTalk (‰‰)."""
+        """Send alert via DingTalk."""
         if not self.dingtalk_webhook:
             logger.warning("DingTalk webhook not configured")
             return
@@ -294,9 +294,9 @@ Metadata:
             content = f"""
 ### {alert.title}
 
-**§+**: {alert.level.value}
-**e**: {alert.source}
-**φτ**: {alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+**ηΊ§ε«**: {alert.level.value}
+**ζ¥ζΊ**: {alert.source}
+**ζ—¶ι—΄**: {alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
 {alert.message}
 """
@@ -323,7 +323,7 @@ Metadata:
             raise
 
     def _send_wechat_work(self, alert: Alert):
-        """Send alert via WeChat Work (®α)."""
+        """Send alert via WeChat Work."""
         if not self.wechat_work_webhook:
             logger.warning("WeChat Work webhook not configured")
             return
@@ -332,9 +332,9 @@ Metadata:
             # WeChat Work message format
             content = f"""
 <font color="warning">{alert.title}</font>
-> §+: {alert.level.value}
-> e: {alert.source}
-> φτ: {alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
+> ηΊ§ε«: {alert.level.value}
+> ζ¥ζΊ: {alert.source}
+> ζ—¶ι—΄: {alert.timestamp.strftime('%Y-%m-%d %H:%M:%S')}
 
 {alert.message}
 """

@@ -126,7 +126,7 @@ class StrategyMonitor:
 
         logger.debug(
             f"Trade recorded: {strategy_name} | {symbol} {side} | "
-            f"PnL: ¥{pnl:,.2f}"
+            f"PnL: {pnl:,.2f}"
         )
 
     def record_signal(

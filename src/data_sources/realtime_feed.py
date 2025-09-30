@@ -136,9 +136,9 @@ class SinaRealtimeFeed(RealtimeFeed):
 
     async def _update_loop(self):
         """Fetch and distribute updates."""
-        from src.data_sources.sina_finance import SinaFinanceAPI
+        from src.data_sources.sina_finance import SinaFinanceDataSource
 
-        api = SinaFinanceAPI()
+        api = SinaFinanceDataSource()
 
         while self.is_running:
             try:

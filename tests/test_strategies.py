@@ -23,8 +23,9 @@ class TestMovingAverageCrossover:
             'signal_strength': 0.8
         })
 
-        # Feed prices: downtrend then uptrend (need more data for crossover detection)
-        prices = [40.0, 39.0, 38.0, 39.0, 40.0, 41.5]
+        # Feed prices: downtrend then sharp uptrend
+        # At price[4]: fast_ma(38,45)=41.5, slow_ma(38,40,45)=41.0, crossover happens
+        prices = [40.0, 39.0, 38.0, 40.0, 45.0]
 
         for price in prices:
             event = MarketDataEvent(
@@ -51,8 +52,9 @@ class TestMovingAverageCrossover:
         # Add position first
         strategy.position["TEST.SH"] = 1000
 
-        # Feed prices: uptrend then downtrend (need more data for crossover detection)
-        prices = [42.0, 43.0, 44.0, 43.0, 41.0, 39.5]
+        # Feed prices: uptrend then sharp downtrend
+        # At price[4]: fast_ma(44,35)=39.5, slow_ma(42,44,35)=40.3, crossover happens
+        prices = [40.0, 41.0, 42.0, 44.0, 35.0]
 
         for price in prices:
             event = MarketDataEvent(
@@ -94,12 +96,12 @@ class TestMeanReversion:
             'bb_period': 5,
             'bb_std_dev': 1.5,  # Lower std_dev for easier trigger
             'rsi_period': 3,
-            'rsi_oversold': 35,  # Higher threshold for easier trigger
+            'rsi_oversold': 45,  # Higher threshold for easier trigger
             'rsi_overbought': 70
         })
 
-        # Feed prices simulating strong oversold (price drops significantly)
-        prices = [40.0, 39.0, 38.0, 37.0, 36.0, 35.0, 34.5]
+        # Feed prices simulating strong oversold (sharp drop)
+        prices = [42.0, 41.0, 40.0, 38.0, 36.0, 34.0, 32.0, 30.5]
 
         for price in prices:
             event = MarketDataEvent(

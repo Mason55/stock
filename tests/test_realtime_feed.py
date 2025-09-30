@@ -136,7 +136,7 @@ class TestSinaRealtimeFeed:
         feed.register_callback(test_callback)
 
         # Mock Sina API
-        with patch('src.data_sources.sina_finance.SinaFinanceAPI') as mock_api_class:
+        with patch('src.data_sources.sina_finance.SinaFinanceDataSource') as mock_api_class:
             mock_api = Mock()
             mock_api.get_realtime_quote.return_value = {
                 'current_price': 10.50,
@@ -169,7 +169,7 @@ class TestSinaRealtimeFeed:
 
         feed.register_callback(sync_callback)
 
-        with patch('src.data_sources.sina_finance.SinaFinanceAPI') as mock_api_class:
+        with patch('src.data_sources.sina_finance.SinaFinanceDataSource') as mock_api_class:
             mock_api = Mock()
             mock_api.get_realtime_quote.return_value = {'current_price': 10.0}
             mock_api_class.return_value = mock_api
@@ -246,7 +246,7 @@ class TestSinaRealtimeFeed:
 
         feed.register_callback(failing_callback)
 
-        with patch('src.data_sources.sina_finance.SinaFinanceAPI') as mock_api_class:
+        with patch('src.data_sources.sina_finance.SinaFinanceDataSource') as mock_api_class:
             mock_api = Mock()
             mock_api.get_realtime_quote.return_value = {'current_price': 10.0}
             mock_api_class.return_value = mock_api
@@ -266,7 +266,7 @@ class TestSinaRealtimeFeed:
         """Test handling of API errors."""
         feed = SinaRealtimeFeed(config={'update_interval': 0.1})
 
-        with patch('src.data_sources.sina_finance.SinaFinanceAPI') as mock_api_class:
+        with patch('src.data_sources.sina_finance.SinaFinanceDataSource') as mock_api_class:
             mock_api = Mock()
             mock_api.get_realtime_quote.side_effect = Exception("API error")
             mock_api_class.return_value = mock_api
@@ -293,7 +293,7 @@ class TestSinaRealtimeFeed:
 
         feed.register_callback(capture_callback)
 
-        with patch('src.data_sources.sina_finance.SinaFinanceAPI') as mock_api_class:
+        with patch('src.data_sources.sina_finance.SinaFinanceDataSource') as mock_api_class:
             mock_api = Mock()
             mock_api.get_realtime_quote.return_value = {
                 'current_price': 10.50,
@@ -337,7 +337,7 @@ class TestSinaRealtimeFeed:
         feed.register_callback(callback1)
         feed.register_callback(callback2)
 
-        with patch('src.data_sources.sina_finance.SinaFinanceAPI') as mock_api_class:
+        with patch('src.data_sources.sina_finance.SinaFinanceDataSource') as mock_api_class:
             mock_api = Mock()
             mock_api.get_realtime_quote.return_value = {'current_price': 10.0}
             mock_api_class.return_value = mock_api

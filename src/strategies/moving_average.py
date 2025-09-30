@@ -51,7 +51,8 @@ class MovingAverageCrossover(Strategy):
 
         # Initialize price history for new symbol
         if symbol not in self.price_history:
-            self.price_history[symbol] = deque(maxlen=self.slow_period)
+            # Need slow_period + 1 to detect crossover
+            self.price_history[symbol] = deque(maxlen=self.slow_period + 1)
             self.last_crossover[symbol] = None
 
         # Update price history

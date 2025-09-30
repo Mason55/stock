@@ -218,12 +218,16 @@ class Portfolio(EventHandler):
         """Update portfolio on fill"""
         if event.symbol not in self.positions:
             self.positions[event.symbol] = 0
-        
+
+        # Determine order side from fill event's order or default to event's order field
         order = self.orders.get(event.order_id)
+        if not order and hasattr(event, 'order'):
+            order = event.order
+
         if order and order.side == OrderSide.BUY:
             self.positions[event.symbol] += event.quantity
             self.cash -= float(event.price * event.quantity + event.commission)
-        else:
+        elif order and order.side == OrderSide.SELL:
             self.positions[event.symbol] -= event.quantity
             self.cash += float(event.price * event.quantity - event.commission)
         

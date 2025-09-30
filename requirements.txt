@@ -1,9 +1,19 @@
-# Core dependencies
-Flask==2.3.3
-SQLAlchemy==2.0.21
+# Core dependencies (aligned with pyproject.toml)
+Flask==2.3.2
+Flask-CORS==4.0.0
+SQLAlchemy==2.0.19
 psycopg2-binary==2.9.7
-redis==5.0.0
+redis==4.6.0
 python-dotenv==1.0.0
+PyYAML==6.0.1
+
+# Request libraries
+requests==2.31.0
+aiohttp==3.8.5
+
+# Data validation
+pydantic==2.1.1
+pydantic-settings==2.0.2
 
 # Analysis and computation
 numpy==1.24.3
@@ -11,12 +21,15 @@ pandas==2.0.3
 scikit-learn==1.3.0
 scipy==1.11.2
 
+# Rate limiting
+Flask-limiter==3.3.1
+
 # Monitoring and observability
 prometheus-client==0.17.1
 psutil==5.9.5
 
 # Testing
-pytest==7.4.2
+pytest==7.4.0
 pytest-cov==4.1.0
 pytest-mock==3.11.1
 
@@ -27,7 +40,10 @@ cryptography==41.0.4
 black==23.7.0
 flake8==6.0.0
 mypy==1.5.1
+isort==5.12.0
 
 # Optional for enhanced features
 # gunicorn==21.2.0  # For production deployment
 # celery==5.3.1     # For background tasks
+# yfinance==0.2.21  # Yahoo Finance data
+# tushare>=1.2.0    # Tushare Pro data

@@ -8,9 +8,9 @@ from config.settings import settings
 from src.database import db_manager, get_session_factory, init_database
 from src.api.stock_api import stock_bp
 from src.api.metrics import metrics_bp, before_request_metrics, after_request_metrics
-import src.api.stock_api as stock_api_module
 from src.utils.logger import setup_logger, RequestLogger
 from src.utils.error_handler import register_error_handlers
+from src.utils.di_container import init_container, get_container
 from src.middleware.rate_limiter import RateLimiter, get_redis_client
 from src.middleware.cache import CacheManager
 from src.middleware.auth import AuthMiddleware
@@ -70,10 +70,14 @@ def create_app():
         app.rate_limiter = None
         app.cache_manager = None
     
-    # Inject dependencies into API module
-    stock_api_module.session_factory = session_factory
-    stock_api_module.cache_manager = getattr(app, 'cache_manager', None)
-    stock_api_module.rate_limiter = getattr(app, 'rate_limiter', None)
+    # Initialize dependency injection container
+    container = init_container(
+        session_factory=session_factory,
+        cache_manager=getattr(app, 'cache_manager', None),
+        rate_limiter=getattr(app, 'rate_limiter', None)
+    )
+    app.container = container
+    logger.info("Dependency injection container initialized")
     
     # Request timing and metrics middleware
     @app.before_request

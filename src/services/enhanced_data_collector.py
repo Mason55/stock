@@ -30,30 +30,8 @@ class EnhancedDataCollector:
     
     async def fetch_stock_list(self) -> List[Dict]:
         """获取股票列表"""
-        # 固定的股票列表，实际项目中可以从数据源获取
-        stock_list = [
-            # A股热门股票
-            {"code": "000001.SZ", "name": "平安银行", "exchange": "SZ", "industry": "银行", "currency": "CNY"},
-            {"code": "000002.SZ", "name": "万科A", "exchange": "SZ", "industry": "房地产", "currency": "CNY"},
-            {"code": "000858.SZ", "name": "五粮液", "exchange": "SZ", "industry": "白酒", "currency": "CNY"},
-            {"code": "000977.SZ", "name": "浪潮信息", "exchange": "SZ", "industry": "计算机设备", "currency": "CNY"},
-            {"code": "600000.SH", "name": "浦发银行", "exchange": "SH", "industry": "银行", "currency": "CNY"},
-            {"code": "600036.SH", "name": "招商银行", "exchange": "SH", "industry": "银行", "currency": "CNY"},
-            {"code": "600519.SH", "name": "贵州茅台", "exchange": "SH", "industry": "白酒", "currency": "CNY"},
-            {"code": "600900.SH", "name": "长江电力", "exchange": "SH", "industry": "电力", "currency": "CNY"},
-            
-            # 港股热门股票
-            {"code": "700.HK", "name": "腾讯控股", "exchange": "HK", "industry": "互联网", "currency": "HKD"},
-            {"code": "9988.HK", "name": "阿里巴巴-SW", "exchange": "HK", "industry": "互联网", "currency": "HKD"},
-            {"code": "3690.HK", "name": "美团-W", "exchange": "HK", "industry": "互联网", "currency": "HKD"},
-            {"code": "9618.HK", "name": "京东集团-SW", "exchange": "HK", "industry": "电商", "currency": "HKD"},
-            {"code": "1810.HK", "name": "小米集团-W", "exchange": "HK", "industry": "智能手机", "currency": "HKD"},
-            {"code": "2318.HK", "name": "中国平安", "exchange": "HK", "industry": "保险", "currency": "HKD"},
-            {"code": "1299.HK", "name": "友邦保险", "exchange": "HK", "industry": "保险", "currency": "HKD"},
-            {"code": "2020.HK", "name": "安踏体育", "exchange": "HK", "industry": "服装", "currency": "HKD"}
-        ]
-        
-        return stock_list
+        from config.stock_symbols import ALL_STOCKS
+        return list(ALL_STOCKS)
     
     async def fetch_realtime_price(self, stock_code: str) -> Optional[Dict]:
         """获取实时价格数据"""
@@ -78,9 +56,11 @@ class EnhancedDataCollector:
                                      data['yesterday_close'] * 100) if data['yesterday_close'] else 0
                     }
             except DataSourceError as e:
-                self.logger.warning(f"Sina Finance failed for {stock_code}: {e}")
+                self.logger.warning(f"Sina Finance failed for {stock_code}: {e}", exc_info=False)
+            except (ValueError, KeyError) as e:
+                self.logger.error(f"Data parsing error for {stock_code}: {e}", exc_info=True)
             except Exception as e:
-                self.logger.error(f"Unexpected error with Sina Finance for {stock_code}: {e}")
+                self.logger.error(f"Unexpected error with Sina Finance for {stock_code}: {e}", exc_info=True)
         
         # Fallback to Yahoo Finance for other stocks or if Sina fails
         try:

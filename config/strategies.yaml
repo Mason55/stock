@@ -1,0 +1,41 @@
+# config/strategies.yaml - Strategy configuration
+
+# Moving Average Crossover Strategy
+moving_average_crossover:
+  enabled: true
+  fast_period: 5      # Fast MA period (days)
+  slow_period: 20     # Slow MA period (days)
+  signal_strength: 0.8  # Signal strength when crossover occurs
+
+# Mean Reversion Strategy
+mean_reversion:
+  enabled: true
+  bb_period: 20       # Bollinger Bands period
+  bb_std_dev: 2.0     # Standard deviation multiplier
+  rsi_period: 14      # RSI period
+  rsi_oversold: 30    # RSI oversold threshold
+  rsi_overbought: 70  # RSI overbought threshold
+  signal_strength: 0.7
+
+# Momentum Strategy
+momentum:
+  enabled: true
+  lookback_period: 20       # Period to calculate momentum
+  momentum_threshold: 5.0   # Minimum momentum % to buy (5%)
+  exit_threshold: -2.0      # Momentum % to sell (-2%)
+  signal_strength: 0.75
+  max_positions: 5          # Maximum concurrent positions
+
+# Strategy Combinations (for multi-strategy portfolios)
+combinations:
+  conservative:
+    - moving_average_crossover
+    - mean_reversion
+
+  aggressive:
+    - momentum
+
+  balanced:
+    - moving_average_crossover
+    - mean_reversion
+    - momentum

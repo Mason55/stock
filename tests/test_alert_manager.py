@@ -81,7 +81,10 @@ class TestAlertManager:
 
     def test_send_alert_multiple_levels(self):
         """Test sending alerts with different levels."""
-        manager = AlertManager(config={'channels': ['log']})
+        manager = AlertManager(config={
+            'channels': ['log'],
+            'alert_cooldown': 0  # Disable cooldown for test
+        })
 
         for level in [AlertLevel.INFO, AlertLevel.WARNING, AlertLevel.ERROR, AlertLevel.CRITICAL]:
             manager.send_alert(
@@ -97,7 +100,8 @@ class TestAlertManager:
         """Test alert rate limiting."""
         manager = AlertManager(config={
             'channels': ['log'],
-            'max_alerts_per_hour': 3
+            'max_alerts_per_hour': 3,
+            'alert_cooldown': 0  # Disable cooldown to test rate limiting
         })
 
         # Send 3 alerts (should succeed)
@@ -307,7 +311,10 @@ class TestAlertManager:
 
     def test_get_alert_history(self):
         """Test getting alert history."""
-        manager = AlertManager(config={'channels': ['log']})
+        manager = AlertManager(config={
+            'channels': ['log'],
+            'alert_cooldown': 0  # Disable cooldown
+        })
 
         # Send multiple alerts
         for i in range(5):
@@ -323,7 +330,10 @@ class TestAlertManager:
 
     def test_get_alert_history_by_source(self):
         """Test filtering alert history by source."""
-        manager = AlertManager(config={'channels': ['log']})
+        manager = AlertManager(config={
+            'channels': ['log'],
+            'alert_cooldown': 0  # Disable cooldown
+        })
 
         manager.send_alert(AlertLevel.INFO, 'Test 1', 'Msg', 'source1')
         manager.send_alert(AlertLevel.INFO, 'Test 2', 'Msg', 'source2')
@@ -335,7 +345,10 @@ class TestAlertManager:
 
     def test_get_alert_history_by_level(self):
         """Test filtering alert history by level."""
-        manager = AlertManager(config={'channels': ['log']})
+        manager = AlertManager(config={
+            'channels': ['log'],
+            'alert_cooldown': 0  # Disable cooldown
+        })
 
         manager.send_alert(AlertLevel.INFO, 'Test 1', 'Msg', 'test')
         manager.send_alert(AlertLevel.ERROR, 'Test 2', 'Msg', 'test')
@@ -364,7 +377,10 @@ class TestAlertManager:
 
     def test_get_alert_summary(self):
         """Test alert summary statistics."""
-        manager = AlertManager(config={'channels': ['log']})
+        manager = AlertManager(config={
+            'channels': ['log'],
+            'alert_cooldown': 0  # Disable cooldown
+        })
 
         manager.send_alert(AlertLevel.INFO, 'Test 1', 'Msg', 'source1')
         manager.send_alert(AlertLevel.WARNING, 'Test 2', 'Msg', 'source1')
@@ -435,7 +451,10 @@ class TestAlertManager:
 
     def test_alert_count_tracking(self):
         """Test alert count tracking per source."""
-        manager = AlertManager(config={'channels': ['log']})
+        manager = AlertManager(config={
+            'channels': ['log'],
+            'alert_cooldown': 0  # Disable cooldown
+        })
 
         for i in range(5):
             manager.send_alert(

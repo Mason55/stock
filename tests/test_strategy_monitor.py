@@ -420,12 +420,22 @@ class TestStrategyMonitor:
         monitor = StrategyMonitor()
         monitor.register_strategy('test_strategy')
 
-        # Add equity points spanning multiple days
+        # Add equity points spanning 30 days with clear growth
         base_time = datetime.now() - timedelta(days=30)
+
+        # Add initial equity manually
         monitor.equity_curves['test_strategy'].append({
             'timestamp': base_time,
             'equity': 1000000
         })
+
+        # Add middle point
+        monitor.equity_curves['test_strategy'].append({
+            'timestamp': base_time + timedelta(days=15),
+            'equity': 1050000
+        })
+
+        # Add final point
         monitor.update_equity('test_strategy', 1100000)
 
         metrics = monitor.get_metrics('test_strategy')

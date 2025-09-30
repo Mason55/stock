@@ -1,16 +1,26 @@
-# 股票分析系统
+# 股票量化交易系统
 
-一个高度可移植的现代化股票分析系统，支持技术分析、基本面分析和情绪分析。
+一个高度可移植的现代化股票量化交易系统，集成数据分析、策略回测、实盘交易全流程。
 
-## ✨ 功能特性
+## ✨ 核心功能
 
-- 🚀 **多数据源集成** - 新浪财经、Yahoo Finance，支持自动降级
-- 📊 **深度技术分析** - 20+专业指标：KDJ、布林带、威廉指标等
+### 📊 数据分析
+- 🚀 **多数据源集成** - 新浪财经、Yahoo Finance、Tushare，支持自动降级
+- 📈 **深度技术分析** - 20+专业指标：MA、RSI、MACD、布林带等
 - 💼 **基本面分析** - 估值、盈利能力、成长性、财务健康度评估
 - 😊 **情绪分析** - 新闻舆情、社交媒体情绪、分析师观点
-- 🎯 **智能投资建议** - 多维度综合评分与风险评估
+
+### 🎯 量化交易 (NEW)
+- 📈 **策略回测引擎** - 事件驱动架构，支持多策略并行
+- 🤖 **实盘交易框架** - 完整的订单管理、仓位跟踪、风控系统
+- 💡 **内置策略库** - 双均线、均值回归、动量策略等经典策略
+- ⚙️ **灵活配置系统** - YAML配置，支持策略组合
+- 📊 **性能分析** - 夏普比率、最大回撤、收益归因等完整指标
+
+### 🛡️ 系统特性
 - ⚡ **高性能架构** - 异步处理，支持批量分析
-- 🛡️ **健壮性设计** - 故障转移、自动降级、离线模式
+- 🔒 **风控保护** - 订单限流、仓位限制、熔断机制
+- 🎨 **健壮性设计** - 故障转移、自动降级、离线模式
 
 ## 🎯 便携性亮点
 
@@ -22,15 +32,29 @@
 
 ## ⚡ 快速启动
 
-### 🚀 最简启动 (< 1分钟)
+### 🚀 数据分析API (< 1分钟)
 ```bash
-# 无需数据库，使用模拟数据
-pip install -r build/requirements/minimal.txt
+# 安装依赖
+pip install -r requirements.txt
+
+# 启动API服务
 export OFFLINE_MODE=true DATABASE_URL=sqlite:///dev.db
 python src/app.py
 
-# 测试
+# 测试股票查询
 curl http://localhost:5000/api/stocks/600900.SH
+```
+
+### 📈 量化策略回测 (NEW)
+```bash
+# 回测双均线策略
+python examples/backtest_strategies.py --strategy moving_average --symbol 600036.SH --days 60
+
+# 回测策略组合
+python examples/backtest_strategies.py --combination balanced --days 90
+
+# 查看所有策略
+python examples/backtest_strategies.py --help
 ```
 
 ### 🐳 Docker启动 (< 2分钟)
@@ -97,6 +121,11 @@ curl -X POST http://localhost:5000/api/stocks/batch_analysis \
 
 ## 📖 文档导航
 
+### 量化交易文档 (NEW)
+- 🎯 [策略使用指南](STRATEGY_GUIDE.md) - 策略开发、回测、实盘完整教程
+- 🔴 [实盘交易文档](LIVE_TRADING_IMPLEMENTATION.md) - 实盘系统架构与使用
+- 📋 [项目TODO](docs/TODO.md) - 开发路线图与进度
+
 ### 用户文档
 - 📚 [快速启动指南](docs/QUICK_START.md) - 多种启动方式详解
 - 🔧 [API接口文档](docs/API.md) - 完整API参考
@@ -115,26 +144,47 @@ stock/
 ├── src/                    # 源代码
 │   ├── api/               # API接口层
 │   ├── services/          # 业务服务
+│   ├── trading/           # ⚡ 实盘交易 (NEW)
+│   ├── strategies/        # 📈 策略库 (NEW)
+│   ├── backtest/          # 🧪 回测引擎 (NEW)
 │   ├── database/          # 数据库管理
-│   ├── models/            # 数据模型
+│   ├── models/            # 数据模型 (含trading/market_data)
 │   ├── middleware/        # 中间件
 │   └── utils/             # 工具函数
+├── config/                # ⚙️ 配置文件
+│   └── strategies.yaml   # 策略配置 (NEW)
 ├── docs/                  # 文档
+├── examples/              # 📚 示例代码
+│   └── backtest_strategies.py  # 回测示例 (NEW)
+├── tests/                 # 🧪 测试
+│   ├── test_live_trading.py   # 实盘测试 (NEW)
+│   └── test_strategies.py      # 策略测试 (NEW)
 ├── scripts/               # 脚本工具
 ├── build/                 # 构建相关文件
-│   ├── docker/           # Docker相关文件
-│   └── requirements/     # 分层依赖文件
-├── pyproject.toml        # 项目配置
-└── examples/             # 示例代码
+├── STRATEGY_GUIDE.md      # 📖 策略指南 (NEW)
+├── LIVE_TRADING_IMPLEMENTATION.md  # 🔴 实盘文档 (NEW)
+└── pyproject.toml        # 项目配置
 ```
 
 ## 🔄 运行模式
 
 | 模式 | 依赖 | 启动时间 | 适用场景 |
 |------|------|----------|----------|
-| **离线模式** | 最小 | <1分钟 | 演示、测试、离线环境 |
-| **基础模式** | 中等 | <3分钟 | 开发、小规模部署 |
-| **完整模式** | 完整 | <5分钟 | 生产环境、大规模部署 |
+| **数据分析模式** | 最小 | <1分钟 | API服务、数据查询 |
+| **策略回测模式** | 中等 | <1分钟 | 策略开发、历史验证 |
+| **纸上交易模式** | 完整 | <2分钟 | 实时模拟、策略验证 |
+| **实盘交易模式** | 完整+券商 | <3分钟 | 真实交易 (需券商接口) |
+
+## 📊 量化系统进度
+
+| 阶段 | 状态 | 模块 | 测试 |
+|------|------|------|------|
+| **阶段1: 实盘基础** | ✅ 完成 | 5个核心模块 | 11/11通过 |
+| **阶段2: 策略库** | ✅ 完成 | 3个经典策略 | 13/16通过 |
+| **阶段3: 风控增强** | 📋 计划中 | 动态风控/仓位管理 | - |
+| **阶段4: 生产化** | 📋 计划中 | 监控/告警/优化 | - |
+
+详见: [项目TODO](docs/TODO.md)
 
 ## 🤝 贡献指南
 

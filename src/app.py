@@ -7,6 +7,7 @@ from flask_cors import CORS
 from config.settings import settings
 from src.database import db_manager, get_session_factory, init_database
 from src.api.stock_api import stock_bp
+from src.api.indicators_api import indicators_bp
 from src.api.metrics import metrics_bp, before_request_metrics, after_request_metrics
 from src.utils.logger import setup_logger, RequestLogger
 from src.utils.error_handler import register_error_handlers
@@ -118,6 +119,7 @@ def create_app():
     
     # Register blueprints
     app.register_blueprint(stock_bp)
+    app.register_blueprint(indicators_bp)
     app.register_blueprint(metrics_bp)
 
     # Frontend routes

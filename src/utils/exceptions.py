@@ -54,3 +54,8 @@ class ConfigurationError(StockAnalysisException):
 class AnalysisError(StockAnalysisException):
     """Stock analysis computation error"""
     pass
+
+
+class ResourceNotFoundError(StockAnalysisException):
+    """Resource not found error"""
+    pass

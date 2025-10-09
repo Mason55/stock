@@ -142,3 +142,6 @@ def get_stocks_by_exchange(exchange: str) -> List[Dict[str, str]]:
 def get_stocks_by_industry(industry: str) -> List[Dict[str, str]]:
     """Get stocks by industry"""
     return [s for s in ALL_STOCKS if s["industry"] == industry]
+
+# Backward compatibility: simple dict mapping
+STOCK_SYMBOLS = {stock["code"]: stock["name"] for stock in A_SHARE_STOCKS}

@@ -23,15 +23,15 @@ from src.backtest.engine import BacktestEngine
 from src.strategies.strategy_loader import StrategyLoader
 
 
-async def run_backtest(strategy, symbol: str, days: int = 60):
+async def run_backtest(strategy, symbol: str, days: int = 60, use_real_data: bool = True):
     """Run backtest for a strategy.
 
     Args:
         strategy: Strategy instance
         symbol: Stock symbol
         days: Number of days to backtest
+        use_real_data: Whether to use real market data (default: True)
     """
-    # Generate test data
     end_date = date.today()
     start_date = end_date - timedelta(days=days)
 
@@ -41,39 +41,65 @@ async def run_backtest(strategy, symbol: str, days: int = 60):
     print(f"Period: {start_date} to {end_date} ({days} days)")
     print(f"{'='*60}\n")
 
-    # Create test data (simulate price movement)
-    base_price = 40.0
-    test_data = []
+    # Try to fetch real historical data
+    test_df = None
+    if use_real_data:
+        try:
+            from src.api.stock_api import fetch_history_df
+            print("Fetching real market data...")
+            test_df = fetch_history_df(symbol, days=days + 30)  # Fetch extra for buffer
 
-    for i in range(days):
-        current_date = start_date + timedelta(days=i)
+            if test_df is not None and not test_df.empty:
+                # Ensure date column is datetime
+                test_df['date'] = pd.to_datetime(test_df['date'])
+                # Sort by date
+                test_df = test_df.sort_values('date').reset_index(drop=True)
+                # Take last N days
+                test_df = test_df.tail(days)
+                print(f"✓ Successfully loaded {len(test_df)} days of real data")
+            else:
+                print("⚠ Failed to fetch real data, falling back to simulated data")
+                test_df = None
+        except Exception as e:
+            print(f"⚠ Error fetching real data: {e}")
+            print("  Falling back to simulated data")
+            test_df = None
 
-        # Simulate different price patterns for different strategies
-        if "moving_average" in strategy.name:
-            # Trending market
-            price = base_price + (i * 0.1) + (i % 5) * 0.5
-        elif "mean_reversion" in strategy.name:
-            # Oscillating market
-            import math
-            price = base_price + 5 * math.sin(i * 0.3)
-        elif "momentum" in strategy.name:
-            # Strong trend with pullbacks
-            trend = i * 0.15
-            volatility = (i % 7 - 3) * 0.3
-            price = base_price + trend + volatility
-        else:
-            price = base_price + (i * 0.05)
+    # Fallback: Generate simulated test data
+    if test_df is None:
+        print("Using simulated market data...")
+        base_price = 40.0
+        test_data = []
 
-        test_data.append({
-            'date': current_date,
-            'open': price - 0.2,
-            'high': price + 0.3,
-            'low': price - 0.3,
-            'close': price,
-            'volume': 8500000 + i * 100000
-        })
+        for i in range(days):
+            current_date = start_date + timedelta(days=i)
 
-    test_df = pd.DataFrame(test_data)
+            # Simulate different price patterns for different strategies
+            if "moving_average" in strategy.name:
+                # Trending market
+                price = base_price + (i * 0.1) + (i % 5) * 0.5
+            elif "mean_reversion" in strategy.name:
+                # Oscillating market
+                import math
+                price = base_price + 5 * math.sin(i * 0.3)
+            elif "momentum" in strategy.name:
+                # Strong trend with pullbacks
+                trend = i * 0.15
+                volatility = (i % 7 - 3) * 0.3
+                price = base_price + trend + volatility
+            else:
+                price = base_price + (i * 0.05)
+
+            test_data.append({
+                'date': current_date,
+                'open': price - 0.2,
+                'high': price + 0.3,
+                'low': price - 0.3,
+                'close': price,
+                'volume': 8500000 + i * 100000
+            })
+
+        test_df = pd.DataFrame(test_data)
 
     # Create backtest engine
     config = {
@@ -104,6 +130,24 @@ async def run_backtest(strategy, symbol: str, days: int = 60):
     # Run backtest
     print("Running backtest...")
     results = await engine.run()
+
+    # Display strategy indicators (MA values, etc.)
+    print("\nSTRATEGY INDICATORS (last 5 days):")
+    print("-" * 60)
+    for i in range(max(0, len(test_df) - 5), len(test_df)):
+        row = test_df.iloc[i]
+        date_str = row['date'].strftime('%Y-%m-%d') if hasattr(row['date'], 'strftime') else str(row['date'])[:10]
+        print(f"{date_str}: Close=¥{float(row['close']):.2f}, High=¥{float(row['high']):.2f}, Low=¥{float(row['low']):.2f}")
+
+        # Show MA values if strategy has them
+        indicators = strategy.get_indicators(symbol)
+        if indicators:
+            if 'fast_ma' in indicators and 'slow_ma' in indicators:
+                print(f"  MA({strategy.fast_period})=¥{indicators['fast_ma']:.2f}, MA({strategy.slow_period})=¥{indicators['slow_ma']:.2f}")
+            elif 'bb_upper' in indicators:
+                print(f"  BB_Upper=¥{indicators['bb_upper']:.2f}, BB_Lower=¥{indicators['bb_lower']:.2f}, RSI={indicators.get('rsi', 0):.2f}")
+            elif 'momentum' in indicators:
+                print(f"  Momentum={indicators['momentum']:.2f}%")
 
     # Display results
     print("\n" + "="*60)
@@ -171,6 +215,11 @@ async def main():
         default=60,
         help='Number of days to backtest'
     )
+    parser.add_argument(
+        '--use-simulated',
+        action='store_true',
+        help='Use simulated data instead of real market data'
+    )
 
     args = parser.parse_args()
 
@@ -211,7 +260,12 @@ async def main():
 
     results_list = []
     for strategy in strategies:
-        result = await run_backtest(strategy, args.symbol, args.days)
+        result = await run_backtest(
+            strategy,
+            args.symbol,
+            args.days,
+            use_real_data=not args.use_simulated
+        )
         results_list.append((strategy.name, result))
 
     # Compare results if multiple strategies

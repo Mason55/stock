@@ -233,6 +233,26 @@ class RiskPreset:
         }
         return presets.get(risk_level, RiskPreset.moderate())
 
+    @staticmethod
+    def get_sizer_params(risk_level: RiskLevel) -> Dict:
+        """Get only PositionSizer initialization parameters.
+
+        Use this when creating a PositionSizer instance.
+        For stop_loss_pct, use the full preset dict or calculate_stop_loss().
+
+        Args:
+            risk_level: Risk level
+
+        Returns:
+            Dict with only risk_per_trade_pct, max_position_pct, max_total_exposure
+        """
+        preset = RiskPreset.get_preset(risk_level)
+        return {
+            'risk_per_trade_pct': preset['risk_per_trade_pct'],
+            'max_position_pct': preset['max_position_pct'],
+            'max_total_exposure': preset['max_total_exposure']
+        }
+
 
 def calculate_stop_loss(entry_price: float, stop_loss_pct: float = 0.05) -> float:
     """Calculate stop loss price.

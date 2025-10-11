@@ -114,11 +114,19 @@ class MarketSimulator:
         return (price / self.rules.min_tick).quantize(Decimal('1')) * self.rules.min_tick
     
     def is_trading_time(self, timestamp: datetime) -> bool:
-        """Check if timestamp is within trading hours"""
-        time_of_day = timestamp.time()
-        
-        return ((self.rules.morning_open <= time_of_day <= self.rules.morning_close) or
-                (self.rules.afternoon_open <= time_of_day <= self.rules.afternoon_close))
+        """Check if timestamp is within trading hours
+
+        For backtesting, we accept any time during market days since we're
+        processing daily data. In real trading, this would check actual hours.
+        """
+        # For backtesting with daily data, always return True
+        # In production, uncomment the actual time check below
+        return True
+
+        # Real-time trading time check (commented out for backtesting):
+        # time_of_day = timestamp.time()
+        # return ((self.rules.morning_open <= time_of_day <= self.rules.morning_close) or
+        #         (self.rules.afternoon_open <= time_of_day <= self.rules.afternoon_close))
     
     async def process_order(self, order: Order, market_data: pd.DataFrame, timestamp: datetime) -> Optional[Dict]:
         """

@@ -71,10 +71,10 @@ class Momentum(Strategy):
         self.momentum_scores[symbol] = momentum
 
         # Generate signals
-        self._check_buy_signal(symbol, close_price, momentum)
-        self._check_sell_signal(symbol, close_price, momentum)
+        await self._check_buy_signal(symbol, close_price, momentum)
+        await self._check_sell_signal(symbol, close_price, momentum)
 
-    def _check_buy_signal(self, symbol: str, price: float, momentum: float):
+    async def _check_buy_signal(self, symbol: str, price: float, momentum: float):
         """Check for buy signal based on momentum."""
         # Don't buy if already at max positions
         current_positions = len([s for s, qty in self.position.items() if qty > 0])
@@ -90,7 +90,7 @@ class Momentum(Strategy):
             # Adjust strength based on momentum strength
             strength = min(self.signal_strength * (momentum / self.momentum_threshold), 1.0)
 
-            self.generate_signal(
+            await self.generate_signal(
                 symbol,
                 "BUY",
                 strength=strength,
@@ -106,7 +106,7 @@ class Momentum(Strategy):
                 f"Price={price:.2f}, Momentum={momentum:.2f}%"
             )
 
-    def _check_sell_signal(self, symbol: str, price: float, momentum: float):
+    async def _check_sell_signal(self, symbol: str, price: float, momentum: float):
         """Check for sell signal based on momentum."""
         # Only sell if we have position
         if symbol not in self.position or self.position[symbol] <= 0:
@@ -114,7 +114,7 @@ class Momentum(Strategy):
 
         # Momentum weakens or turns negative -> SELL
         if momentum <= self.exit_threshold:
-            self.generate_signal(
+            await self.generate_signal(
                 symbol,
                 "SELL",
                 strength=1.0,  # Sell all

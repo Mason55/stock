@@ -85,14 +85,14 @@ class MeanReversion(Strategy):
             return
 
         # Generate signals
-        self._check_buy_signal(symbol, close_price, bb_lower, rsi)
-        self._check_sell_signal(symbol, close_price, bb_upper, rsi)
+        await self._check_buy_signal(symbol, close_price, bb_lower, rsi)
+        await self._check_sell_signal(symbol, close_price, bb_upper, rsi)
 
-    def _check_buy_signal(self, symbol: str, price: float, bb_lower: float, rsi: float):
+    async def _check_buy_signal(self, symbol: str, price: float, bb_lower: float, rsi: float):
         """Check for buy signal."""
         # Price at or below lower band AND RSI oversold
         if price <= bb_lower and rsi < self.rsi_oversold:
-            self.generate_signal(
+            await self.generate_signal(
                 symbol,
                 "BUY",
                 strength=self.signal_strength,
@@ -109,7 +109,7 @@ class MeanReversion(Strategy):
                 f"Price={price:.2f} <= BB_lower={bb_lower:.2f}, RSI={rsi:.1f}"
             )
 
-    def _check_sell_signal(self, symbol: str, price: float, bb_upper: float, rsi: float):
+    async def _check_sell_signal(self, symbol: str, price: float, bb_upper: float, rsi: float):
         """Check for sell signal."""
         # Only sell if we have position
         if symbol not in self.position or self.position[symbol] <= 0:
@@ -117,7 +117,7 @@ class MeanReversion(Strategy):
 
         # Price at or above upper band OR RSI overbought
         if price >= bb_upper or rsi > self.rsi_overbought:
-            self.generate_signal(
+            await self.generate_signal(
                 symbol,
                 "SELL",
                 strength=1.0,  # Sell all

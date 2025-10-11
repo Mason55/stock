@@ -36,6 +36,9 @@ class MovingAverageCrossover(Strategy):
         # Track last crossover direction to avoid repeated signals
         self.last_crossover: Dict[str, str] = {}  # 'up' or 'down'
 
+        # Debug counter
+        self.event_count = 0
+
         logger.info(
             f"MA Strategy initialized: fast={self.fast_period}, "
             f"slow={self.slow_period}, strength={self.signal_strength}"
@@ -43,6 +46,8 @@ class MovingAverageCrossover(Strategy):
 
     async def handle_market_data(self, event: MarketDataEvent):
         """Process market data and generate signals."""
+        self.event_count += 1
+
         symbol = event.symbol
         close_price = float(event.price_data.get('close', 0))
 
@@ -70,10 +75,18 @@ class MovingAverageCrossover(Strategy):
         # Detect crossover
         crossover = self._detect_crossover(symbol, fast_ma, slow_ma)
 
+        # Log detection
+        if self.event_count <= 15 or self.event_count >= 25:  # Log first and last few
+            logger.debug(
+                f"Day {self.event_count}: price={close_price:.2f}, "
+                f"fast_ma={fast_ma:.2f}, slow_ma={slow_ma:.2f}, "
+                f"crossover={crossover}, last_state={self.last_crossover.get(symbol)}"
+            )
+
         if crossover == 'golden':
             # Fast MA crosses above Slow MA -> BUY signal
             if self.last_crossover[symbol] != 'up':
-                self.generate_signal(
+                await self.generate_signal(
                     symbol,
                     "BUY",
                     strength=self.signal_strength,
@@ -97,7 +110,7 @@ class MovingAverageCrossover(Strategy):
             if self.last_crossover[symbol] != 'down':
                 # Only sell if we have a position
                 if symbol in self.position and self.position[symbol] > 0:
-                    self.generate_signal(
+                    await self.generate_signal(
                         symbol,
                         "SELL",
                         strength=1.0,  # Sell all

@@ -97,12 +97,13 @@ class EventHandler(ABC):
 
 class Strategy(EventHandler):
     """Base strategy class"""
-    
-    def __init__(self, name: str, config: Dict = None):
+
+    def __init__(self, name: str, config: Dict = None, event_queue: asyncio.Queue = None):
         self.name = name
         self.config = config or {}
         self.position = {}  # symbol -> quantity
         self.signals = []
+        self.event_queue = event_queue  # For submitting signals
         
     @abstractmethod
     async def handle_market_data(self, event: MarketDataEvent):
@@ -129,8 +130,8 @@ class Strategy(EventHandler):
         else:
             self.position[event.symbol] -= abs(event.quantity)
     
-    def generate_signal(self, symbol: str, signal_type: str, strength: float = 1.0, metadata: Dict = None):
-        """Generate a trading signal"""
+    async def generate_signal(self, symbol: str, signal_type: str, strength: float = 1.0, metadata: Dict = None):
+        """Generate a trading signal and submit to event queue"""
         signal = SignalEvent(
             timestamp=datetime.now(),
             symbol=symbol,
@@ -139,24 +140,33 @@ class Strategy(EventHandler):
             metadata=metadata or {}
         )
         self.signals.append(signal)
+
+        # Submit signal to event queue for processing
+        if self.event_queue:
+            await self.event_queue.put(signal)
+
         return signal
 
 
 class Portfolio(EventHandler):
     """Portfolio manager"""
-    
-    def __init__(self, initial_capital: float = 1000000.0):
+
+    def __init__(self, initial_capital: float = 1000000.0, event_queue: asyncio.Queue = None):
         self.initial_capital = initial_capital
         self.cash = initial_capital
         self.positions = {}  # symbol -> quantity
         self.holdings = {}   # symbol -> market_value
         self.total_value = initial_capital
         self.orders = {}     # order_id -> Order
-        
+        self.event_queue = event_queue  # For submitting orders
+
         # Performance tracking
         self.equity_curve = []
         self.returns = []
         self.trades = []
+
+        # Track current market prices for position sizing
+        self.current_prices = {}  # symbol -> price
         
     async def handle_event(self, event: Event):
         """Handle portfolio events"""
@@ -174,6 +184,10 @@ class Portfolio(EventHandler):
             quantity = self.calculate_position_size(event.symbol, event.strength)
             if quantity > 0:
                 order = self.create_market_order(event.symbol, OrderSide.BUY, quantity)
+                # Submit order to event queue for processing
+                if self.event_queue:
+                    order_event = OrderEvent(timestamp=event.timestamp, order=order)
+                    await self.event_queue.put(order_event)
                 return order
         elif event.signal_type == "SELL":
             current_position = self.positions.get(event.symbol, 0)
@@ -181,18 +195,22 @@ class Portfolio(EventHandler):
                 quantity = int(current_position * event.strength)
                 if quantity > 0:
                     order = self.create_market_order(event.symbol, OrderSide.SELL, quantity)
+                    # Submit order to event queue for processing
+                    if self.event_queue:
+                        order_event = OrderEvent(timestamp=event.timestamp, order=order)
+                        await self.event_queue.put(order_event)
                     return order
-        
+
         return None
     
     def calculate_position_size(self, symbol: str, signal_strength: float) -> int:
         """Calculate position size based on available cash and signal strength"""
         max_position_value = self.cash * 0.1 * signal_strength  # Max 10% per position
-        
-        # Would need current price - simplified for now
-        assumed_price = 40.0  # This should come from market data
-        quantity = int(max_position_value / assumed_price / 100) * 100  # Round to 100 shares
-        
+
+        # Use current market price if available
+        current_price = self.current_prices.get(symbol, 40.0)
+        quantity = int(max_position_value / current_price / 100) * 100  # Round to 100 shares
+
         return quantity
     
     def create_market_order(self, symbol: str, side: OrderSide, quantity: int) -> Order:
@@ -244,11 +262,17 @@ class Portfolio(EventHandler):
     
     async def update_portfolio_value(self, event: MarketDataEvent):
         """Update portfolio value based on current market prices"""
+        # Update current price
+        close_price = float(event.price_data.get('close', 0))
+        if close_price > 0:
+            self.current_prices[event.symbol] = close_price
+
+        # Update holdings value
         if event.symbol in self.positions:
             quantity = self.positions[event.symbol]
-            current_price = Decimal(str(event.price_data.get('close', 0)))
+            current_price = Decimal(str(close_price))
             self.holdings[event.symbol] = float(current_price * quantity)
-        
+
         # Calculate total portfolio value
         total_holdings = sum(self.holdings.values())
         self.total_value = self.cash + total_holdings
@@ -280,16 +304,16 @@ class BacktestEngine:
         self.end_date = end_date
         self.config = config or {}
         
-        # Core components
-        self.market_simulator = MarketSimulator(self.config.get('market', {}))
-        self.cost_model = CostModel(self.config.get('costs', {}))
-        self.risk_manager = BacktestRiskManager(self.config.get('risk', {}))
-        self.portfolio = Portfolio(initial_capital)
-        
         # Event system
         self.event_queue = asyncio.Queue()
         self.handlers = {}  # event_type -> List[EventHandler]
         self.strategies = []
+
+        # Core components (portfolio needs event_queue reference)
+        self.market_simulator = MarketSimulator(self.config.get('market', {}))
+        self.cost_model = CostModel(self.config.get('costs', {}))
+        self.risk_manager = BacktestRiskManager(self.config.get('risk', {}))
+        self.portfolio = Portfolio(initial_capital, self.event_queue)
         
         # State
         self.current_time = None
@@ -312,6 +336,9 @@ class BacktestEngine:
     
     def add_strategy(self, strategy: Strategy):
         """Add a trading strategy"""
+        # Inject event_queue into strategy so it can emit signals
+        strategy.event_queue = self.event_queue
+
         self.strategies.append(strategy)
         self.register_handler(EventType.MARKET_DATA, strategy)
         self.register_handler(EventType.FILL, strategy)
@@ -362,10 +389,10 @@ class BacktestEngine:
             if 'date' in data.columns:
                 # Handle both date and datetime objects
                 if hasattr(data['date'].iloc[0], 'date'):
-                    # datetime objects
+                    # datetime objects - use .dt accessor
                     day_data = data[data['date'].dt.date == date]
                 else:
-                    # date objects
+                    # date objects - direct comparison
                     day_data = data[data['date'] == date]
             else:
                 # Assume index is date
@@ -373,7 +400,7 @@ class BacktestEngine:
                     day_data = data[data.index.date == date]
                 else:
                     day_data = data[data.index == date]
-            
+
             if not day_data.empty:
                 price_data = day_data.iloc[0].to_dict()
                 event = MarketDataEvent(
@@ -382,6 +409,9 @@ class BacktestEngine:
                     price_data=price_data
                 )
                 await self.event_queue.put(event)
+            else:
+                # Data not found for this date - this might be weekends
+                logger.debug(f"No data for {symbol} on {date}")
     
     async def _process_events(self):
         """Process all events in the queue"""

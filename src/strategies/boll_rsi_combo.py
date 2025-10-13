@@ -125,7 +125,7 @@ class BollingerRSICombo(Strategy):
                 boll_strength = max(0, (lower - close_price) / lower * 5)
                 signal_strength = min(0.95, 0.75 + (rsi_strength + boll_strength) / 2 * 0.2)
 
-                await self.generate_signal(symbol, "BUY", signal_strength)
+                self.generate_signal(symbol, "BUY", signal_strength)
                 self.last_signal[symbol] = "BUY"
                 logger.info(
                     f"{symbol}: Confirmed BUY - Price {close_price:.2f} at lower band {lower:.2f}, "
@@ -140,7 +140,7 @@ class BollingerRSICombo(Strategy):
                 boll_strength = max(0, (close_price - upper) / upper * 5)
                 signal_strength = min(0.95, 0.75 + (rsi_strength + boll_strength) / 2 * 0.2)
 
-                await self.generate_signal(symbol, "SELL", signal_strength)
+                self.generate_signal(symbol, "SELL", signal_strength)
                 self.last_signal[symbol] = "SELL"
                 logger.info(
                     f"{symbol}: Confirmed SELL - Price {close_price:.2f} at upper band {upper:.2f}, "
@@ -151,7 +151,7 @@ class BollingerRSICombo(Strategy):
         # Only Bollinger extreme
         elif close_price < lower and self.last_signal[symbol] != "WEAK_BUY":
             if 30 < rsi < 50:  # RSI not overbought
-                await self.generate_signal(symbol, "BUY", 0.6)
+                self.generate_signal(symbol, "BUY", 0.6)
                 self.last_signal[symbol] = "WEAK_BUY"
                 logger.info(
                     f"{symbol}: Weak BUY - Price {close_price:.2f} below band, RSI {rsi:.2f} neutral"
@@ -160,7 +160,7 @@ class BollingerRSICombo(Strategy):
         # Only RSI extreme
         elif rsi < self.rsi_oversold and self.last_signal[symbol] != "WEAK_BUY":
             if lower < close_price < middle:  # Price in lower half but not extreme
-                await self.generate_signal(symbol, "BUY", 0.6)
+                self.generate_signal(symbol, "BUY", 0.6)
                 self.last_signal[symbol] = "WEAK_BUY"
                 logger.info(
                     f"{symbol}: Weak BUY - RSI {rsi:.2f} oversold, price {close_price:.2f} in range"

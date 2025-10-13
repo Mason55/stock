@@ -84,7 +84,7 @@ class BollingerBreakout(Strategy):
             # Mean reversion: buy at lower band, sell at upper band
             if close_price <= lower and self.last_signal[symbol] != "BUY":
                 signal_strength = min(0.9, 0.6 + (lower - close_price) / lower * 5)
-                await self.generate_signal(symbol, "BUY", signal_strength)
+                self.generate_signal(symbol, "BUY", signal_strength)
                 self.last_signal[symbol] = "BUY"
                 logger.info(
                     f"{symbol}: Price {close_price:.2f} <= Lower band {lower:.2f} - BUY signal"
@@ -92,7 +92,7 @@ class BollingerBreakout(Strategy):
 
             elif close_price >= upper and self.last_signal[symbol] != "SELL":
                 signal_strength = min(0.9, 0.6 + (close_price - upper) / upper * 5)
-                await self.generate_signal(symbol, "SELL", signal_strength)
+                self.generate_signal(symbol, "SELL", signal_strength)
                 self.last_signal[symbol] = "SELL"
                 logger.info(
                     f"{symbol}: Price {close_price:.2f} >= Upper band {upper:.2f} - SELL signal"
@@ -109,7 +109,7 @@ class BollingerBreakout(Strategy):
             # Upward breakout
             if prev_price <= upper < close_price and self.last_signal[symbol] != "BUY":
                 signal_strength = 0.75
-                await self.generate_signal(symbol, "BUY", signal_strength)
+                self.generate_signal(symbol, "BUY", signal_strength)
                 self.last_signal[symbol] = "BUY"
                 logger.info(
                     f"{symbol}: Upward breakout at {close_price:.2f} through {upper:.2f} - BUY signal"
@@ -118,7 +118,7 @@ class BollingerBreakout(Strategy):
             # Downward breakout
             elif prev_price >= lower > close_price and self.last_signal[symbol] != "SELL":
                 signal_strength = 0.75
-                await self.generate_signal(symbol, "SELL", signal_strength)
+                self.generate_signal(symbol, "SELL", signal_strength)
                 self.last_signal[symbol] = "SELL"
                 logger.info(
                     f"{symbol}: Downward breakout at {close_price:.2f} through {lower:.2f} - SELL signal"

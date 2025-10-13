@@ -130,8 +130,12 @@ class Strategy(EventHandler):
         else:
             self.position[event.symbol] -= abs(event.quantity)
     
-    async def generate_signal(self, symbol: str, signal_type: str, strength: float = 1.0, metadata: Dict = None):
-        """Generate a trading signal and submit to event queue"""
+    def generate_signal(self, symbol: str, signal_type: str, strength: float = 1.0, metadata: Dict = None):
+        """Generate a trading signal and submit to event queue.
+
+        兼容同步/异步调用场景：策略在协程中可直接调用该方法，无需 ``await``，
+        同时事件仍会推送到异步队列。
+        """
         signal = SignalEvent(
             timestamp=datetime.now(),
             symbol=symbol,
@@ -143,7 +147,16 @@ class Strategy(EventHandler):
 
         # Submit signal to event queue for processing
         if self.event_queue:
-            await self.event_queue.put(signal)
+            try:
+                self.event_queue.put_nowait(signal)
+            except asyncio.QueueFull:
+                # 回退到异步投递，确保信号最终进入队列
+                try:
+                    loop = asyncio.get_running_loop()
+                except RuntimeError:
+                    loop = None
+                if loop:
+                    loop.create_task(self.event_queue.put(signal))
 
         return signal
 

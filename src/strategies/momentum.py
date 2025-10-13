@@ -90,7 +90,7 @@ class Momentum(Strategy):
             # Adjust strength based on momentum strength
             strength = min(self.signal_strength * (momentum / self.momentum_threshold), 1.0)
 
-            await self.generate_signal(
+            self.generate_signal(
                 symbol,
                 "BUY",
                 strength=strength,
@@ -114,7 +114,7 @@ class Momentum(Strategy):
 
         # Momentum weakens or turns negative -> SELL
         if momentum <= self.exit_threshold:
-            await self.generate_signal(
+            self.generate_signal(
                 symbol,
                 "SELL",
                 strength=1.0,  # Sell all

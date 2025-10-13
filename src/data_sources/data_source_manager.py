@@ -1,6 +1,7 @@
 # src/data_sources/data_source_manager.py - Unified data source management
 import asyncio
 import logging
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime, date, timedelta
 from typing import List, Dict, Optional, Union
@@ -39,7 +40,8 @@ class BaseDataProvider(ABC):
         self.name = name
         self.config = config
         self.rate_limit = config.get('rate_limit', 60)
-        self.last_request_time = 0
+        self.rate_limit_safety_margin = config.get('rate_limit_safety_margin', 2.0)
+        self.last_request_time: Optional[float] = None
         
     @abstractmethod
     async def get_historical_data(
@@ -64,14 +66,25 @@ class BaseDataProvider(ABC):
     
     async def rate_limit_check(self):
         """Check and enforce rate limits"""
-        current_time = datetime.now().timestamp()
-        time_diff = current_time - self.last_request_time
-        min_interval = 60.0 / self.rate_limit
-        
-        if time_diff < min_interval:
-            await asyncio.sleep(min_interval - time_diff)
-        
-        self.last_request_time = datetime.now().timestamp()
+        current_time = time.monotonic()
+        min_interval = 60.0 / self.rate_limit if self.rate_limit > 0 else 0
+
+        if self.last_request_time is None:
+            self.last_request_time = current_time
+
+        if min_interval > 0 and current_time < self.last_request_time:
+            wait_time = self.last_request_time - current_time
+            if wait_time > 0:
+                await asyncio.sleep(wait_time)
+                current_time = self.last_request_time
+            if self.rate_limit_safety_margin > 0:
+                await asyncio.sleep(self.rate_limit_safety_margin)
+                current_time += self.rate_limit_safety_margin
+
+        if min_interval > 0:
+            self.last_request_time = current_time + min_interval
+        else:
+            self.last_request_time = current_time
 
 
 class SinaFinanceProvider(BaseDataProvider):

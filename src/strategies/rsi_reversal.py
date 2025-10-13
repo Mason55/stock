@@ -97,7 +97,7 @@ class RSIReversal(Strategy):
         if rsi <= self.extreme_oversold and self.last_signal[symbol] != "STRONG_BUY":
             # Extreme oversold - strong buy signal
             signal_strength = 0.95
-            await self.generate_signal(symbol, "BUY", signal_strength)
+            self.generate_signal(symbol, "BUY", signal_strength)
             self.last_signal[symbol] = "STRONG_BUY"
             logger.info(
                 f"{symbol}: Extreme oversold RSI={rsi:.2f} at price {close_price:.2f} - STRONG BUY"
@@ -109,14 +109,14 @@ class RSIReversal(Strategy):
         ):
             # Oversold - regular buy signal
             signal_strength = 0.7 + (self.oversold - rsi) / self.oversold * 0.2
-            await self.generate_signal(symbol, "BUY", signal_strength)
+            self.generate_signal(symbol, "BUY", signal_strength)
             self.last_signal[symbol] = "BUY"
             logger.info(f"{symbol}: Oversold RSI={rsi:.2f} at price {close_price:.2f} - BUY")
 
         elif rsi >= self.extreme_overbought and self.last_signal[symbol] != "STRONG_SELL":
             # Extreme overbought - strong sell signal
             signal_strength = 0.95
-            await self.generate_signal(symbol, "SELL", signal_strength)
+            self.generate_signal(symbol, "SELL", signal_strength)
             self.last_signal[symbol] = "STRONG_SELL"
             logger.info(
                 f"{symbol}: Extreme overbought RSI={rsi:.2f} at price {close_price:.2f} - STRONG SELL"
@@ -128,7 +128,7 @@ class RSIReversal(Strategy):
         ):
             # Overbought - regular sell signal
             signal_strength = 0.7 + (rsi - self.overbought) / (100 - self.overbought) * 0.2
-            await self.generate_signal(symbol, "SELL", signal_strength)
+            self.generate_signal(symbol, "SELL", signal_strength)
             self.last_signal[symbol] = "SELL"
             logger.info(f"{symbol}: Overbought RSI={rsi:.2f} at price {close_price:.2f} - SELL")
 

@@ -136,7 +136,7 @@ class GridTrading(Strategy):
                     # Stronger signals at lower grids
                     signal_strength = 0.6 + (1 - current_grid_idx / self.grid_count) * 0.3
 
-                    await self.generate_signal(symbol, "BUY", signal_strength)
+                    self.generate_signal(symbol, "BUY", signal_strength)
                     self.buy_prices[symbol].append(close_price)
                     self.last_grid_action[symbol] = current_grid_idx
 
@@ -160,7 +160,7 @@ class GridTrading(Strategy):
                 # Stronger signals at higher grids
                 signal_strength = 0.6 + (current_grid_idx / self.grid_count) * 0.3
 
-                await self.generate_signal(symbol, "SELL", signal_strength)
+                self.generate_signal(symbol, "SELL", signal_strength)
 
                 # Remove one buy position (FIFO)
                 if self.buy_prices[symbol]:

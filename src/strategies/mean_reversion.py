@@ -92,7 +92,7 @@ class MeanReversion(Strategy):
         """Check for buy signal."""
         # Price at or below lower band AND RSI oversold
         if price <= bb_lower and rsi < self.rsi_oversold:
-            await self.generate_signal(
+            self.generate_signal(
                 symbol,
                 "BUY",
                 strength=self.signal_strength,
@@ -117,7 +117,7 @@ class MeanReversion(Strategy):
 
         # Price at or above upper band OR RSI overbought
         if price >= bb_upper or rsi > self.rsi_overbought:
-            await self.generate_signal(
+            self.generate_signal(
                 symbol,
                 "SELL",
                 strength=1.0,  # Sell all

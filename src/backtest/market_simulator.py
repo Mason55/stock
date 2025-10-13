@@ -114,19 +114,27 @@ class MarketSimulator:
         return (price / self.rules.min_tick).quantize(Decimal('1')) * self.rules.min_tick
     
     def is_trading_time(self, timestamp: datetime) -> bool:
-        """Check if timestamp is within trading hours
+        """检查给定时间是否处于交易时段。
 
-        For backtesting, we accept any time during market days since we're
-        processing daily data. In real trading, this would check actual hours.
+        默认严格执行沪深股票交易时段：
+        - 上午 09:30-11:30
+        - 下午 13:00-15:00
+        中午休市、夜间以及周末都会返回 False。
+        如果配置显式设置 ``ignore_trading_hours=True``，则始终允许交易，
+        便于特定回测场景。
         """
-        # For backtesting with daily data, always return True
-        # In production, uncomment the actual time check below
-        return True
+        if self.config.get('ignore_trading_hours'):
+            return True
 
-        # Real-time trading time check (commented out for backtesting):
-        # time_of_day = timestamp.time()
-        # return ((self.rules.morning_open <= time_of_day <= self.rules.morning_close) or
-        #         (self.rules.afternoon_open <= time_of_day <= self.rules.afternoon_close))
+        # 仅限工作日
+        if timestamp.weekday() >= 5:  # 5=Saturday, 6=Sunday
+            return False
+
+        time_of_day = timestamp.time()
+        in_morning = self.rules.morning_open <= time_of_day <= self.rules.morning_close
+        in_afternoon = self.rules.afternoon_open <= time_of_day <= self.rules.afternoon_close
+
+        return in_morning or in_afternoon
     
     async def process_order(self, order: Order, market_data: pd.DataFrame, timestamp: datetime) -> Optional[Dict]:
         """

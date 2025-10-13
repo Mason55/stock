@@ -86,7 +86,7 @@ class MovingAverageCrossover(Strategy):
         if crossover == 'golden':
             # Fast MA crosses above Slow MA -> BUY signal
             if self.last_crossover[symbol] != 'up':
-                await self.generate_signal(
+                self.generate_signal(
                     symbol,
                     "BUY",
                     strength=self.signal_strength,
@@ -110,7 +110,7 @@ class MovingAverageCrossover(Strategy):
             if self.last_crossover[symbol] != 'down':
                 # Only sell if we have a position
                 if symbol in self.position and self.position[symbol] > 0:
-                    await self.generate_signal(
+                    self.generate_signal(
                         symbol,
                         "SELL",
                         strength=1.0,  # Sell all

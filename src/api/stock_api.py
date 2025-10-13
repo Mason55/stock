@@ -1,7 +1,7 @@
 # src/api/stock_api.py - Stock query API endpoints with offline mode support
 import asyncio
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import Dict, List, Optional
 from flask import Blueprint, jsonify, g
 from flask import request as flask_request
 from sqlalchemy.orm import sessionmaker
@@ -11,6 +11,8 @@ try:
 except ImportError:
     from src.services.simple_recommendation import SimpleRecommendationEngine as RecommendationEngine
 from src.services.mock_data import mock_data_service
+from src.services.fundamental_provider import fundamental_data_provider
+from src.services.sentiment_provider import sentiment_data_provider
 import requests
 from src.middleware.validator import require_stock_code, InputValidator
 from src.database import get_db_session
@@ -695,26 +697,86 @@ def get_stock_analysis(stock_code: str):
                     }
                     result['technical_analysis'] = tech
                 if analysis_type in ['fundamental', 'all']:
-                    result['fundamental_analysis'] = {'degraded': True, 'note': '未接入真实基本面数据'}
-                if analysis_type in ['sentiment', 'all']:
-                    result['sentiment_analysis'] = {'degraded': True, 'note': '未接入真实情绪数据'}
-                if analysis_type == 'all':
-                    # Simple recommendation from technicals
-                    score = 0.0
-                    if result['technical_analysis']['overall_trend'] == 'bullish':
-                        score = 7.5 if (inds.get('rsi14') and inds['rsi14'] < 70) else 6.0
-                    elif result['technical_analysis']['overall_trend'] == 'neutral':
-                        score = 5.0
+                    fundamentals = fundamental_data_provider.get_fundamental_analysis(stock_code)
+                    if fundamentals:
+                        fundamentals = {**fundamentals, 'degraded': False}
                     else:
-                        score = 3.5 if (inds.get('rsi14') and inds['rsi14'] < 30) else 2.5
-                    action = '买入' if score >= 7 else '持有' if score >= 5 else '观望'
-                    risk = '低风险' if score >= 7 else '中等风险' if score >= 5 else '高风险'
+                        fundamentals = {
+                            'degraded': True,
+                            'note': '未接入真实基本面数据',
+                            'source': 'fallback'
+                        }
+                    result['fundamental_analysis'] = fundamentals
+
+                if analysis_type in ['sentiment', 'all']:
+                    sentiment = sentiment_data_provider.get_sentiment_analysis(stock_code)
+                    if sentiment:
+                        sentiment = {**sentiment, 'degraded': False}
+                    else:
+                        sentiment = {
+                            'degraded': True,
+                            'note': '未接入真实情绪数据',
+                            'source': 'fallback'
+                        }
+                    result['sentiment_analysis'] = sentiment
+
+                if analysis_type == 'all':
+                    # 综合技术 / 基本面 / 情绪得分
+                    tech_score = 0.0
+                    trend = result['technical_analysis']['overall_trend']
+                    if trend == 'bullish':
+                        tech_score = 7.5 if (inds.get('rsi14') and inds['rsi14'] < 70) else 6.0
+                    elif trend == 'neutral':
+                        tech_score = 5.0
+                    else:
+                        tech_score = 3.5 if (inds.get('rsi14') and inds['rsi14'] < 30) else 2.5
+
+                    def _fundamental_score(data: Dict) -> Optional[float]:
+                        if not data or data.get('degraded'):
+                            return None
+                        valuation = data.get('valuation', {})
+                        profitability = data.get('profitability', {})
+                        growth = data.get('growth', {})
+                        score = 5.0
+                        pe = valuation.get('pe_ratio')
+                        if isinstance(pe, (int, float)):
+                            if pe <= 15:
+                                score += 1.0
+                            elif pe >= 40:
+                                score -= 1.0
+                        roe = profitability.get('roe')
+                        if isinstance(roe, (int, float)):
+                            score += max(-1.5, min(1.5, (roe - 0.1) * 30))
+                        revenue_growth = growth.get('revenue_growth')
+                        if isinstance(revenue_growth, (int, float)):
+                            score += max(-1.0, min(1.5, revenue_growth * 10))
+                        return round(min(max(score, 0.0), 10.0), 2)
+
+                    def _sentiment_score(data: Dict) -> Optional[float]:
+                        if not data or data.get('degraded'):
+                            return None
+                        overall = data.get('overall_sentiment')
+                        if isinstance(overall, (int, float)):
+                            return round(min(max(overall * 10, 0.0), 10.0), 2)
+                        return None
+
+                    scores = [tech_score]
+                    fund_score = _fundamental_score(result.get('fundamental_analysis'))
+                    if fund_score is not None:
+                        scores.append(fund_score)
+                    sent_score = _sentiment_score(result.get('sentiment_analysis'))
+                    if sent_score is not None:
+                        scores.append(sent_score)
+
+                    final_score = sum(scores) / len(scores)
+                    action = '买入' if final_score >= 7 else '持有' if final_score >= 5 else '观望'
+                    risk = '低风险' if final_score >= 7 else '中等风险' if final_score >= 5 else '高风险'
                     result['recommendation'] = {
                         'action': action,
-                        'confidence': round(min(1.0, score / 10.0), 2),
-                        'score': round(score, 1),
+                        'confidence': round(min(1.0, final_score / 10.0), 2),
+                        'score': round(final_score, 1),
                         'risk_level': risk,
-                        'source': 'technical-indicators'
+                        'source': 'multi-factor'
                     }
                 return jsonify(result)
         

@@ -41,7 +41,11 @@ class BaseDataProvider(ABC):
         self.config = config
         self.rate_limit = config.get('rate_limit', 60)
         self.rate_limit_safety_margin = config.get('rate_limit_safety_margin', 2.0)
+        self._min_safety_margin = config.get('rate_limit_safety_margin_min', 0.0)
+        self._max_safety_margin = config.get('rate_limit_safety_margin_max', 5.0)
+        self.adaptive_rate_limit = config.get('adaptive_rate_limit', True)
         self.last_request_time: Optional[float] = None
+        self._last_execution_time: Optional[float] = None
         
     @abstractmethod
     async def get_historical_data(
@@ -70,21 +74,65 @@ class BaseDataProvider(ABC):
         min_interval = 60.0 / self.rate_limit if self.rate_limit > 0 else 0
 
         if self.last_request_time is None:
-            self.last_request_time = current_time
+            self.last_request_time = current_time - min_interval if min_interval > 0 else current_time
 
-        if min_interval > 0 and current_time < self.last_request_time:
-            wait_time = self.last_request_time - current_time
-            if wait_time > 0:
-                await asyncio.sleep(wait_time)
-                current_time = self.last_request_time
-            if self.rate_limit_safety_margin > 0:
-                await asyncio.sleep(self.rate_limit_safety_margin)
-                current_time += self.rate_limit_safety_margin
-
+        actual_sleep = 0.0
         if min_interval > 0:
-            self.last_request_time = current_time + min_interval
-        else:
-            self.last_request_time = current_time
+            next_allowed_time = self.last_request_time + min_interval
+            wait_time = max(0.0, next_allowed_time - current_time)
+            if wait_time > 0:
+                logger.debug(
+                    "%s rate limit sleep %.2fs (limit=%s/min)",
+                    self.name,
+                    wait_time,
+                    self.rate_limit,
+                )
+                await asyncio.sleep(wait_time)
+                actual_sleep += wait_time
+                current_time = next_allowed_time
+
+        if self.rate_limit_safety_margin > 0:
+            await asyncio.sleep(self.rate_limit_safety_margin)
+            actual_sleep += self.rate_limit_safety_margin
+            current_time += self.rate_limit_safety_margin
+
+        self.last_request_time = current_time
+
+        now = time.monotonic()
+        if self._last_execution_time is not None:
+            actual_interval = now - self._last_execution_time
+            self._adjust_rate_limit_margin(actual_interval, min_interval)
+        self._last_execution_time = now
+
+    def _adjust_rate_limit_margin(self, actual_interval: float, min_interval: float) -> None:
+        """Adapt safety margin based on observed interval to balance throughput & safety."""
+        if not self.adaptive_rate_limit or min_interval <= 0:
+            return
+
+        target_interval = min_interval + max(self.rate_limit_safety_margin, 0)
+
+        if actual_interval + 1e-3 < min_interval:
+            increment = max(0.2, (min_interval - actual_interval) * 1.2)
+            new_margin = min(self._max_safety_margin, self.rate_limit_safety_margin + increment)
+            if new_margin > self.rate_limit_safety_margin:
+                logger.warning(
+                    "%s rate limit tightened: margin %.2fs -> %.2fs",
+                    self.name,
+                    self.rate_limit_safety_margin,
+                    new_margin,
+                )
+                self.rate_limit_safety_margin = new_margin
+        elif actual_interval > target_interval + 2:
+            decrement = min(0.5, (actual_interval - target_interval) / 2)
+            new_margin = max(self._min_safety_margin, self.rate_limit_safety_margin - decrement)
+            if new_margin < self.rate_limit_safety_margin:
+                logger.debug(
+                    "%s rate limit relaxed: margin %.2fs -> %.2fs",
+                    self.name,
+                    self.rate_limit_safety_margin,
+                    new_margin,
+                )
+                self.rate_limit_safety_margin = new_margin
 
 
 class SinaFinanceProvider(BaseDataProvider):

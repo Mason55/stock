@@ -104,6 +104,7 @@ class Strategy(EventHandler):
         self.position = {}  # symbol -> quantity
         self.signals = []
         self.event_queue = event_queue  # For submitting signals
+        self.pending_signals: List[SignalEvent] = []
         
     @abstractmethod
     async def handle_market_data(self, event: MarketDataEvent):
@@ -150,13 +151,39 @@ class Strategy(EventHandler):
             try:
                 self.event_queue.put_nowait(signal)
             except asyncio.QueueFull:
-                # 回退到异步投递，确保信号最终进入队列
+                logger.warning(
+                    "Signal queue full, using fallback for %s", signal.symbol
+                )
                 try:
                     loop = asyncio.get_running_loop()
                 except RuntimeError:
                     loop = None
+
                 if loop:
                     loop.create_task(self.event_queue.put(signal))
+                else:
+                    try:
+                        asyncio.run(self.event_queue.put(signal))
+                    except RuntimeError as exc:
+                        logger.error(
+                            "Failed to enqueue signal synchronously: %s", exc
+                        )
+                        self.pending_signals.append(signal)
+                        logger.warning(
+                            "Signal stored in pending queue (size=%d)",
+                            len(self.pending_signals),
+                        )
+            else:
+                # Flush any pending signals if we currently have a running loop
+                if self.pending_signals:
+                    try:
+                        loop = asyncio.get_running_loop()
+                    except RuntimeError:
+                        loop = None
+                    if loop:
+                        while self.pending_signals:
+                            pending = self.pending_signals.pop(0)
+                            loop.create_task(self.event_queue.put(pending))
 
         return signal
 

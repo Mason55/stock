@@ -5,6 +5,13 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
+try:
+    from config.stock_symbols import ALL_STOCKS, get_stock_by_code
+except Exception:  # pragma: no cover - defensive import for minimal environments
+    ALL_STOCKS = []
+    def get_stock_by_code(_code: str):
+        return None
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,34 +32,109 @@ class MockDataService:
     
     def __init__(self):
         self.stocks = self._initialize_mock_stocks()
-        self.price_history = {}
-        logger.info("Mock data service initialized with sample stocks")
-    
+        self.price_history: Dict[str, List[Dict]] = {}
+        logger.info(
+            "Mock data service initialized with %d sample stocks", len(self.stocks)
+        )
+
     def _initialize_mock_stocks(self) -> Dict[str, MockStockData]:
         """Initialize sample stock data"""
-        sample_stocks = [
-            MockStockData("600900.SH", "长江电力", 24.15, 2.85, 15680000, 580000000000, "电力", "SH"),
-            MockStockData("600036.SH", "招商银行", 41.80, 1.45, 8520000, 1200000000000, "银行", "SH"),
-            MockStockData("000001.SZ", "平安银行", 12.50, -0.80, 12000000, 240000000000, "银行", "SZ"),
-            MockStockData("600519.SH", "贵州茅台", 1680.50, 0.30, 2100000, 2100000000000, "白酒", "SH"),
-            MockStockData("000002.SZ", "万科A", 18.20, -1.20, 18000000, 200000000000, "房地产", "SZ"),
-            MockStockData("600276.SH", "恒瑞医药", 58.90, 1.80, 5600000, 380000000000, "医药", "SH"),
-            MockStockData("000858.SZ", "五粮液", 158.30, 0.95, 3200000, 620000000000, "白酒", "SZ"),
-            MockStockData("002415.SZ", "海康威视", 34.70, 2.15, 8900000, 320000000000, "安防", "SZ"),
-            MockStockData("600887.SH", "伊利股份", 32.40, -0.65, 6700000, 210000000000, "乳业", "SH"),
-            MockStockData("000725.SZ", "京东方A", 4.85, 3.20, 45000000, 180000000000, "显示", "SZ"),
-            # 浙江卧龙电气（卧龙电驱）600580.SH
-            MockStockData("600580.SH", "卧龙电驱", 12.80, 1.10, 9200000, 26000000000, "电机", "SH")
-        ]
-        
-        return {stock.code: stock for stock in sample_stocks}
+        sample_stocks = {
+            "600900.SH": MockStockData("600900.SH", "长江电力", 24.15, 2.85, 15680000, 580000000000, "电力", "SH"),
+            "600036.SH": MockStockData("600036.SH", "招商银行", 41.80, 1.45, 8520000, 1200000000000, "银行", "SH"),
+            "000001.SZ": MockStockData("000001.SZ", "平安银行", 12.50, -0.80, 12000000, 240000000000, "银行", "SZ"),
+            "600519.SH": MockStockData("600519.SH", "贵州茅台", 1680.50, 0.30, 2100000, 2100000000000, "白酒", "SH"),
+            "000002.SZ": MockStockData("000002.SZ", "万科A", 18.20, -1.20, 18000000, 200000000000, "房地产", "SZ"),
+            "600276.SH": MockStockData("600276.SH", "恒瑞医药", 58.90, 1.80, 5600000, 380000000000, "医药", "SH"),
+            "000858.SZ": MockStockData("000858.SZ", "五粮液", 158.30, 0.95, 3200000, 620000000000, "白酒", "SZ"),
+            "002415.SZ": MockStockData("002415.SZ", "海康威视", 34.70, 2.15, 8900000, 320000000000, "安防", "SZ"),
+            "600887.SH": MockStockData("600887.SH", "伊利股份", 32.40, -0.65, 6700000, 210000000000, "乳业", "SH"),
+            "000725.SZ": MockStockData("000725.SZ", "京东方A", 4.85, 3.20, 45000000, 180000000000, "显示", "SZ"),
+            "600580.SH": MockStockData("600580.SH", "卧龙电驱", 12.80, 1.10, 9200000, 26000000000, "电机", "SH"),
+        }
+
+        # Merge configured stock list with deterministic synthetic values for broader coverage
+        for entry in ALL_STOCKS:
+            code = entry.get("code")
+            if not code or code in sample_stocks:
+                continue
+            sample_stocks[code] = self._create_synthetic_stock(entry)
+
+        return sample_stocks
+
+    def _create_synthetic_stock(self, meta: Dict[str, str]) -> MockStockData:
+        """Create deterministic synthetic stock data from metadata."""
+        code = meta.get("code")
+        rng = random.Random(code)
+        base_price = round(rng.uniform(8, 180), 2)
+        change_pct = round(rng.uniform(-3, 3), 2)
+        volume = rng.randint(2_000_000, 50_000_000)
+        market_cap = int(base_price * volume * rng.uniform(45, 75)) * 10
+        industry = meta.get("industry", "未知")
+        exchange = meta.get("exchange", (code or "")[-2:])
+        name = meta.get("name", code)
+
+        return MockStockData(
+            code=code,
+            name=name,
+            current_price=base_price,
+            change_pct=change_pct,
+            volume=volume,
+            market_cap=market_cap,
+            industry=industry,
+            exchange=exchange,
+        )
+
+    def register_stock(
+        self,
+        code: str,
+        name: str,
+        industry: str = "未知",
+        exchange: str = "SH",
+        base_price: Optional[float] = None,
+        change_pct: Optional[float] = None,
+        volume: Optional[int] = None,
+        market_cap: Optional[float] = None,
+    ) -> None:
+        """Register or override a stock in mock storage at runtime."""
+        rng = random.Random(code)
+        price = base_price if base_price is not None else round(rng.uniform(8, 200), 2)
+        change = change_pct if change_pct is not None else round(rng.uniform(-3, 3), 2)
+        vol = volume if volume is not None else rng.randint(2_000_000, 40_000_000)
+        cap = market_cap if market_cap is not None else price * vol * rng.uniform(40, 70)
+        self.stocks[code] = MockStockData(
+            code=code,
+            name=name,
+            current_price=price,
+            change_pct=change,
+            volume=vol,
+            market_cap=cap,
+            industry=industry,
+            exchange=exchange,
+        )
+        logger.info("Registered mock stock %s - %s", code, name)
+
+    def _ensure_stock(self, stock_code: str) -> Optional[MockStockData]:
+        """Ensure stock exists, auto-generating synthetic data when needed."""
+        stock = self.stocks.get(stock_code)
+        if stock:
+            return stock
+
+        meta = get_stock_by_code(stock_code) or {
+            "code": stock_code,
+            "name": stock_code,
+        }
+        synthetic = self._create_synthetic_stock(meta)
+        self.stocks[stock_code] = synthetic
+        logger.debug("Generated synthetic mock data for %s", stock_code)
+        return synthetic
     
     def get_stock_info(self, stock_code: str) -> Optional[Dict]:
         """Get basic stock information"""
-        stock = self.stocks.get(stock_code)
+        stock = self._ensure_stock(stock_code)
         if not stock:
             return None
-        
+
         return {
             'code': stock.code,
             'name': stock.name,
@@ -67,10 +149,10 @@ class MockDataService:
     
     def get_realtime_data(self, stock_code: str) -> Optional[Dict]:
         """Get mock real-time data"""
-        stock = self.stocks.get(stock_code)
+        stock = self._ensure_stock(stock_code)
         if not stock:
             return None
-        
+
         # Simulate small price movements
         price_change = random.uniform(-0.02, 0.02)  # ±2%
         current_price = stock.current_price * (1 + price_change)
@@ -87,10 +169,10 @@ class MockDataService:
     
     def get_historical_data(self, stock_code: str, days: int = 30) -> Optional[Dict]:
         """Generate mock historical data"""
-        stock = self.stocks.get(stock_code)
+        stock = self._ensure_stock(stock_code)
         if not stock:
             return None
-        
+
         data = []
         base_price = stock.current_price
         current_date = datetime.now()
@@ -122,7 +204,7 @@ class MockDataService:
     
     def get_stock_analysis(self, stock_code: str, analysis_type: str = 'all') -> Optional[Dict]:
         """Generate mock analysis data"""
-        stock = self.stocks.get(stock_code)
+        stock = self._ensure_stock(stock_code)
         if not stock:
             return None
         

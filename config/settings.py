@@ -40,6 +40,12 @@ class Settings(BaseSettings):
     # Data source configuration
     STOCK_DATA_API_KEY: Optional[str] = os.getenv("STOCK_DATA_API_KEY")
     STOCK_DATA_BASE_URL: str = os.getenv("STOCK_DATA_BASE_URL", "https://api.example.com")
+    FUNDAMENTAL_DATA_API: Optional[str] = os.getenv("FUNDAMENTAL_DATA_API")
+    FUNDAMENTAL_DATA_PATH: Optional[str] = os.getenv("FUNDAMENTAL_DATA_PATH")
+    FUNDAMENTAL_DATA_TIMEOUT: float = float(os.getenv("FUNDAMENTAL_DATA_TIMEOUT", "3.0"))
+    SENTIMENT_DATA_API: Optional[str] = os.getenv("SENTIMENT_DATA_API")
+    SENTIMENT_DATA_PATH: Optional[str] = os.getenv("SENTIMENT_DATA_PATH")
+    SENTIMENT_DATA_TIMEOUT: float = float(os.getenv("SENTIMENT_DATA_TIMEOUT", "3.0"))
 
     # External service timeouts
     EXTERNAL_API_TIMEOUT: float = float(os.getenv("EXTERNAL_API_TIMEOUT", "5.0"))

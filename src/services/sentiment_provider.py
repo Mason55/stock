@@ -5,7 +5,7 @@ import re
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 
 import requests
 
@@ -27,6 +27,12 @@ class SentimentDataProvider:
         self.timeout = settings.SENTIMENT_DATA_TIMEOUT
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.cache_ttl: Dict[str, float] = {}  # track cache timestamp
+
+        # Rate limiting for crawler
+        self.last_crawl_time: Dict[str, float] = {}  # stock_code -> timestamp
+        self.crawl_interval = 5.0  # seconds between crawls for same stock
+        self.global_last_crawl = 0.0  # global rate limit
+        self.global_crawl_interval = 2.0  # seconds between any crawls
 
         if self.local_path:
             self._load_local_file(self.local_path)
@@ -194,14 +200,203 @@ class SentimentDataProvider:
             self.logger.warning("Simple sentiment calculation failed for %s: %s", stock_code, exc)
             return None
 
-    def _fetch_eastmoney_sentiment(self, stock_code: str) -> Optional[Dict[str, Any]]:
-        """Fetch sentiment data from EastMoney (currently disabled due to API restrictions)
+    def _should_rate_limit(self, stock_code: str) -> bool:
+        """Check if we should rate limit this request"""
+        current_time = time.time()
 
-        This method is a placeholder for future implementation when
-        a stable EastMoney API endpoint is available.
-        """
-        self.logger.debug("EastMoney Guba API currently disabled, using fallback")
-        return None
+        # Check global rate limit (avoid hammering server)
+        if current_time - self.global_last_crawl < self.global_crawl_interval:
+            wait_time = self.global_crawl_interval - (current_time - self.global_last_crawl)
+            self.logger.debug(f"Global rate limit, waiting {wait_time:.1f}s")
+            time.sleep(wait_time)
+
+        # Check per-stock rate limit
+        last_crawl = self.last_crawl_time.get(stock_code, 0)
+        if current_time - last_crawl < self.crawl_interval:
+            self.logger.info(f"Rate limiting {stock_code}, too soon since last crawl")
+            return True
+
+        return False
+
+    def _update_rate_limit(self, stock_code: str):
+        """Update rate limit timestamps after successful crawl"""
+        current_time = time.time()
+        self.last_crawl_time[stock_code] = current_time
+        self.global_last_crawl = current_time
+
+    def _analyze_guba_sentiment(self, posts: List[Dict]) -> Dict[str, Any]:
+        """Analyze sentiment from Guba post titles using keyword matching"""
+        # Sentiment keyword dictionary
+        positive_keywords = [
+            '看多', '看好', '上涨', '涨停', '加仓', '买入', '抄底', '起飞', '牛',
+            '突破', '反弹', '强势', '利好', '暴涨', '大涨', '机会', '底部', '金叉',
+            '放量', '主力', '拉升', '新高', '爆发', '龙头', '翻倍', '暴力'
+        ]
+
+        negative_keywords = [
+            '看空', '看跌', '下跌', '跌停', '减仓', '卖出', '割肉', '崩盘', '熊',
+            '破位', '暴跌', '大跌', '利空', '阴跌', '套牢', '被套', '亏损', '死叉',
+            '缩量', '出货', '砸盘', '跳水', '新低', '完了', '垃圾', '扶不起'
+        ]
+
+        neutral_keywords = [
+            '观望', '震荡', '横盘', '整理', '等待', '持有', '不动', '犹豫',
+            '不确定', '看不懂', '迷茫', '谨慎', '风险'
+        ]
+
+        # Analyze each post
+        sentiment_scores = []
+        keyword_counter = {}
+
+        for post in posts:
+            title = post['title']
+            engagement = post.get('engagement', 1)
+
+            # Calculate base sentiment for this post
+            pos_count = sum(1 for kw in positive_keywords if kw in title)
+            neg_count = sum(1 for kw in negative_keywords if kw in title)
+            neu_count = sum(1 for kw in neutral_keywords if kw in title)
+
+            # Sentiment score for this post (-1 to +1)
+            if pos_count + neg_count + neu_count == 0:
+                post_sentiment = 0.0  # Neutral if no keywords
+            else:
+                post_sentiment = (pos_count - neg_count) / (pos_count + neg_count + neu_count + 1)
+
+            # Weight by engagement (popular posts matter more)
+            weight = min(10, 1 + engagement / 100)
+            sentiment_scores.append(post_sentiment * weight)
+
+            # Track keywords
+            for kw in positive_keywords:
+                if kw in title:
+                    keyword_counter[kw] = keyword_counter.get(kw, 0) + 1
+            for kw in negative_keywords:
+                if kw in title:
+                    keyword_counter[kw] = keyword_counter.get(kw, 0) + 1
+            for kw in neutral_keywords:
+                if kw in title:
+                    keyword_counter[kw] = keyword_counter.get(kw, 0) + 1
+
+        # Calculate overall sentiment (normalize to 0-1)
+        if sentiment_scores:
+            avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
+            # Map from [-1, 1] to [0, 1]
+            overall_score = (avg_sentiment + 1) / 2
+        else:
+            overall_score = 0.5
+
+        # Determine sentiment level
+        if overall_score >= 0.6:
+            level = 'positive'
+        elif overall_score <= 0.4:
+            level = 'negative'
+        else:
+            level = 'neutral'
+
+        # Top keywords
+        top_keywords = sorted(keyword_counter.items(), key=lambda x: x[1], reverse=True)[:5]
+        keywords = [kw for kw, _ in top_keywords]
+
+        return {
+            'overall_score': round(overall_score, 2),
+            'level': level,
+            'keywords': keywords,
+            'post_count': len(posts)
+        }
+
+    def _fetch_eastmoney_sentiment(self, stock_code: str) -> Optional[Dict[str, Any]]:
+        """Fetch sentiment data from EastMoney Guba (stock forum)"""
+        try:
+            from bs4 import BeautifulSoup
+
+            # Check rate limit
+            if self._should_rate_limit(stock_code):
+                self.logger.info(f"Skipping Guba crawl for {stock_code} due to rate limit")
+                return None
+
+            # Convert stock code to Guba format (remove market suffix)
+            code_num = stock_code.split('.')[0]
+            url = f"https://guba.eastmoney.com/list,{code_num}.html"
+
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://guba.eastmoney.com/',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            }
+
+            # Fetch page with timeout
+            response = requests.get(url, headers=headers, timeout=self.timeout)
+            if response.status_code != 200:
+                self.logger.warning(f"Guba returned status {response.status_code} for {stock_code}")
+                return None
+
+            response.encoding = 'utf-8'
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Parse post list
+            posts = []
+            post_items = soup.select('tr.listitem')
+
+            for item in post_items[:30]:  # Top 30 posts
+                try:
+                    title_elem = item.select_one('div.title a')
+                    read_elem = item.select_one('div.read')
+                    reply_elem = item.select_one('div.reply')
+
+                    if title_elem:
+                        title = title_elem.get_text(strip=True)
+                        read_count = int(read_elem.get_text(strip=True)) if read_elem else 0
+                        reply_count = int(reply_elem.get_text(strip=True)) if reply_elem else 0
+
+                        posts.append({
+                            'title': title,
+                            'reads': read_count,
+                            'replies': reply_count,
+                            'engagement': read_count + reply_count * 10  # Weight replies higher
+                        })
+                except Exception as e:
+                    self.logger.debug(f"Failed to parse post item: {e}")
+                    continue
+
+            if not posts:
+                self.logger.warning(f"No posts extracted from Guba for {stock_code}")
+                return None
+
+            # Analyze sentiment from post titles
+            sentiment_result = self._analyze_guba_sentiment(posts)
+
+            # Update rate limit after successful crawl
+            self._update_rate_limit(stock_code)
+
+            result = {
+                'overall_sentiment': sentiment_result['overall_score'],
+                'sentiment_level': sentiment_result['level'],
+                'news_sentiment': {
+                    'score': None,
+                    'article_count': None
+                },
+                'social_sentiment': {
+                    'score': sentiment_result['overall_score'],
+                    'mention_count': len(posts),
+                    'total_engagement': sum(p['engagement'] for p in posts),
+                    'keywords': sentiment_result['keywords']
+                },
+                'source': 'eastmoney_guba',
+                'updated_at': datetime.utcnow().isoformat(),
+                'post_count': len(posts)
+            }
+
+            self.logger.info(f"Successfully crawled Guba for {stock_code}: {len(posts)} posts, sentiment={sentiment_result['overall_score']}")
+            return result
+
+        except ImportError:
+            self.logger.error("BeautifulSoup4 not installed. Run: pip install beautifulsoup4")
+            return None
+        except Exception as exc:
+            self.logger.warning(f"EastMoney Guba fetch failed for {stock_code}: {exc}")
+            return None
 
     def _is_cache_valid(self, stock_code: str, max_age_seconds: int = 3600) -> bool:
         """Check if cache entry is still valid (default: 1 hour for sentiment data)"""

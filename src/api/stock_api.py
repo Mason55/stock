@@ -697,9 +697,20 @@ def get_stock_analysis(stock_code: str):
                     }
                     result['technical_analysis'] = tech
                 if analysis_type in ['fundamental', 'all']:
-                    fundamentals = fundamental_data_provider.get_fundamental_analysis(stock_code)
+                    fundamentals = fundamental_data_provider.get_fundamental_analysis(
+                        stock_code, price_hint=price
+                    )
                     if fundamentals:
                         fundamentals = {**fundamentals, 'degraded': False}
+                        valuation = fundamentals.get('valuation') or {}
+                        if price:
+                            eps = valuation.get('eps')
+                            bvps = valuation.get('book_value_per_share')
+                            if eps not in (None, 0):
+                                valuation['pe_ratio'] = round(price / eps, 2)
+                            if bvps not in (None, 0):
+                                valuation['pb_ratio'] = round(price / bvps, 2)
+                        fundamentals['valuation'] = valuation
                     else:
                         fundamentals = {
                             'degraded': True,

@@ -1,13 +1,16 @@
 # src/trading/order_manager.py - Order lifecycle management
 import asyncio
 import logging
-from typing import Dict, List, Optional
+from contextlib import contextmanager
+from typing import Callable, Dict, List, Optional
 from datetime import datetime
 from enum import Enum
 
-from src.models.trading import Order, OrderStatus, Fill
+from sqlalchemy.orm import Session
+
+from src.models.trading import Order, OrderStatus
 from src.trading.broker_adapter import BrokerAdapter, OrderRejectedException
-from src.database.session import DatabaseManager
+from src.database import db_manager
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +29,9 @@ class OrderState(Enum):
     EXPIRED = "expired"
 
 
+SessionFactory = Callable[[], Session]
+
+
 class OrderManager:
     """Manages order lifecycle with state machine.
 
@@ -42,30 +48,48 @@ class OrderManager:
     - Database persistence
     """
 
-    def __init__(self, broker: BrokerAdapter):
+    def __init__(
+        self,
+        broker: BrokerAdapter,
+        session_factory: Optional[SessionFactory] = None,
+        enable_persistence: bool = True,
+    ):
         self.broker = broker
         self.orders: Dict[str, Order] = {}
         self.order_states: Dict[str, OrderState] = {}
-
-        # Database session
-        self.db_session = None
+        self._session_factory = session_factory
+        self._force_disable_persistence = not enable_persistence
+        self._persistence_enabled = False
+        self._init_lock = asyncio.Lock()
+        self._initialized = False
 
     async def initialize(self) -> None:
-        """Initialize order manager."""
-        # Setup database connection
-        try:
-            db_manager = DatabaseManager()
-            db_manager.initialize()
-            self.db_session = db_manager.get_session()
-        except Exception as e:
-            logger.warning(f"Database initialization failed: {e}")
-            self.db_session = None
+        """Initialize order manager and load persisted state."""
+        if self._initialized:
+            return
 
-        # Load pending orders from database
-        if self.db_session:
-            await self._load_pending_orders()
+        async with self._init_lock:
+            if self._initialized:
+                return
 
-        logger.info("Order manager initialized")
+            if self._force_disable_persistence:
+                self._persistence_enabled = False
+            elif self._session_factory is not None:
+                self._persistence_enabled = True
+            else:
+                try:
+                    self._persistence_enabled = db_manager.ensure_initialized()
+                except Exception as e:
+                    logger.warning("Database initialization failed, persistence disabled: %s", e)
+                    self._persistence_enabled = False
+
+            if self._persistence_enabled:
+                await self._load_pending_orders()
+                logger.info("Order manager initialized with database persistence")
+            else:
+                logger.info("Order manager running without database persistence")
+
+            self._initialized = True
 
     async def submit_order(self, order: Order) -> str:
         """Submit order through complete lifecycle.
@@ -79,6 +103,8 @@ class OrderManager:
         Raises:
             OrderRejectedException: If order validation or submission fails
         """
+        await self.initialize()
+
         # Validate order
         self._validate_order(order)
         self.order_states[order.order_id] = OrderState.VALIDATED
@@ -122,6 +148,8 @@ class OrderManager:
         Returns:
             True if cancellation successful
         """
+        await self.initialize()
+
         if order_id not in self.orders:
             logger.warning(f"Order not found: {order_id}")
             return False
@@ -227,51 +255,80 @@ class OrderManager:
 
         logger.debug(f"Order validated: {order.order_id}")
 
+    def _session_scope(self):
+        """Context manager that yields a database session if persistence is enabled."""
+        @contextmanager
+        def _null_context():
+            yield None
+
+        if not self._persistence_enabled:
+            return _null_context()
+
+        if self._session_factory is not None:
+            @contextmanager
+            def _factory_context():
+                session = self._session_factory()
+                try:
+                    yield session
+                    session.commit()
+                except Exception:
+                    session.rollback()
+                    raise
+                finally:
+                    session.close()
+
+            return _factory_context()
+
+        return db_manager.get_session()
+
     async def _persist_order(self, order: Order) -> None:
         """Save order to database."""
-        if not self.db_session:
-            return
+        with self._session_scope() as session:
+            if session is None:
+                return
 
-        try:
-            self.db_session.add(order)
-            self.db_session.commit()
-            logger.debug(f"Order persisted: {order.order_id}")
-        except Exception as e:
-            logger.error(f"Failed to persist order: {e}", exc_info=True)
-            self.db_session.rollback()
+            try:
+                session.add(order)
+                logger.debug(f"Order persisted: {order.order_id}")
+            except Exception as e:
+                logger.error(f"Failed to persist order: {e}", exc_info=True)
+                session.rollback()
+                raise
 
     async def _update_order(self, order: Order) -> None:
         """Update order in database."""
-        if not self.db_session:
-            return
+        with self._session_scope() as session:
+            if session is None:
+                return
 
-        try:
-            self.db_session.merge(order)
-            self.db_session.commit()
-            logger.debug(f"Order updated: {order.order_id}")
-        except Exception as e:
-            logger.error(f"Failed to update order: {e}", exc_info=True)
-            self.db_session.rollback()
+            try:
+                session.merge(order)
+                logger.debug(f"Order updated: {order.order_id}")
+            except Exception as e:
+                logger.error(f"Failed to update order: {e}", exc_info=True)
+                session.rollback()
+                return
 
     async def _load_pending_orders(self) -> None:
         """Load pending orders from database."""
-        if not self.db_session:
-            return
+        with self._session_scope() as session:
+            if session is None:
+                return
 
-        try:
-            pending_orders = self.db_session.query(Order).filter(
-                Order.status.in_([
-                    OrderStatus.PENDING,
-                    OrderStatus.NEW,
-                    OrderStatus.PARTIALLY_FILLED
-                ])
-            ).all()
+            try:
+                pending_orders = session.query(Order).filter(
+                    Order.status.in_([
+                        OrderStatus.PENDING,
+                        OrderStatus.NEW,
+                        OrderStatus.PARTIALLY_FILLED
+                    ])
+                ).all()
 
-            for order in pending_orders:
-                self.orders[order.order_id] = order
-                self.order_states[order.order_id] = OrderState.SUBMITTED
+                for order in pending_orders:
+                    self.orders[order.order_id] = order
+                    self.order_states[order.order_id] = OrderState.SUBMITTED
 
-            logger.info(f"Loaded {len(pending_orders)} pending orders")
+                logger.info("Loaded %d pending orders", len(pending_orders))
 
-        except Exception as e:
-            logger.error(f"Failed to load pending orders: {e}", exc_info=True)
+            except Exception as e:
+                logger.error(f"Failed to load pending orders: {e}", exc_info=True)

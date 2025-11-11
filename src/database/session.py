@@ -6,7 +6,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 from sqlalchemy.pool import QueuePool
 from config.settings import settings
-from src.models.stock import Base
+from src.models import Base  # importing __init__ registers all models
 
 logger = logging.getLogger(__name__)
 

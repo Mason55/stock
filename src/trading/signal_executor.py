@@ -123,8 +123,9 @@ class SignalExecutor:
             logger.info(f"No position to sell for {signal.symbol}")
             return None
 
-        # Calculate sell quantity based on signal strength
-        quantity = int(current_qty * signal.strength / 100) * 100  # Round to 100
+        # Calculate sell quantity based on signal strength (0-1 scale)
+        target_quantity = int(current_qty * signal.strength)
+        quantity = (target_quantity // 100) * 100  # Round down to board lot size
 
         if quantity < 100:
             logger.info(f"Sell signal too small: {quantity} shares")

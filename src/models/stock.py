@@ -4,7 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 from sqlalchemy import Column, DateTime, Float, Index, Integer, String, Text, desc
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import relationship
+from src.models.base import Base
 
 try:
     # Pydantic v2
@@ -13,9 +14,6 @@ try:
     PYDANTIC_V2 = True
 except Exception:  # pragma: no cover
     PYDANTIC_V2 = False
-
-Base = declarative_base()
-
 
 class Stock(Base):
     __tablename__ = "stocks"

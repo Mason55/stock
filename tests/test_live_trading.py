@@ -154,7 +154,7 @@ class TestOrderManager:
         broker = MockBrokerGateway()
         await broker.connect()
 
-        order_manager = OrderManager(broker)
+        order_manager = OrderManager(broker, enable_persistence=False)
 
         # Valid order
         valid_order = Order(
@@ -193,7 +193,7 @@ class TestOrderManager:
         await broker.connect()
         broker.update_market_price("600036.SH", 40.0)
 
-        order_manager = OrderManager(broker)
+        order_manager = OrderManager(broker, enable_persistence=False)
 
         order = Order(
             order_id="SUBMIT_001",
@@ -226,7 +226,7 @@ class TestSignalExecutor:
         await broker.connect()
         broker.update_market_price("600036.SH", 40.0)
 
-        order_manager = OrderManager(broker)
+        order_manager = OrderManager(broker, enable_persistence=False)
         executor = SignalExecutor(broker, order_manager)
 
         # Create buy signal
@@ -243,8 +243,7 @@ class TestSignalExecutor:
 
         assert order is not None
         assert order.side == OrderSide.BUY
-        assert order.quantity > 0
-        assert order.quantity % 100 == 0  # Multiple of 100
+        assert order.quantity == 1200  # 1M cash * 10% * 0.5 / ¥40 -> 1200 shares
 
     @pytest.mark.asyncio
     async def test_sell_signal_execution(self):
@@ -268,14 +267,14 @@ class TestSignalExecutor:
         await asyncio.sleep(0.2)
 
         # Now test sell
-        order_manager = OrderManager(broker)
+        order_manager = OrderManager(broker, enable_persistence=False)
         executor = SignalExecutor(broker, order_manager)
 
         signal = SignalEvent(
             timestamp=datetime.utcnow(),
             symbol="600036.SH",
             signal_type="SELL",
-            strength=1.0,  # Sell 100%
+            strength=0.8,  # Sell 80%
             metadata={}
         )
 
@@ -283,7 +282,7 @@ class TestSignalExecutor:
 
         assert order is not None
         assert order.side == OrderSide.SELL
-        assert order.quantity == 1000
+        assert order.quantity == 800  # 80% of 1000 shares rounded to board lot
 
 
 class TestLiveTradingEngine:
@@ -294,7 +293,11 @@ class TestLiveTradingEngine:
         """Test engine lifecycle."""
         broker = MockBrokerGateway()
         config = LiveEngineConfig(enable_trading=False)  # Paper trading
-        engine = LiveTradingEngine(broker, config)
+        engine = LiveTradingEngine(
+            broker,
+            config,
+            order_manager=OrderManager(broker, enable_persistence=False),
+        )
 
         # Start engine
         await engine.start()
@@ -312,7 +315,11 @@ class TestLiveTradingEngine:
         broker.update_market_price("600036.SH", 40.0)
 
         config = LiveEngineConfig(enable_trading=True)
-        engine = LiveTradingEngine(broker, config)
+        engine = LiveTradingEngine(
+            broker,
+            config,
+            order_manager=OrderManager(broker, enable_persistence=False),
+        )
 
         # Add strategy
         strategy = SimpleTestStrategy()
@@ -343,7 +350,10 @@ class TestLiveTradingEngine:
     async def test_engine_status(self):
         """Test engine status reporting."""
         broker = MockBrokerGateway()
-        engine = LiveTradingEngine(broker)
+        engine = LiveTradingEngine(
+            broker,
+            order_manager=OrderManager(broker, enable_persistence=False),
+        )
 
         await engine.start()
 

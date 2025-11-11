@@ -37,13 +37,14 @@ class LiveTradingEngine:
     def __init__(
         self,
         broker: BrokerAdapter,
-        config: LiveEngineConfig = None
+        config: LiveEngineConfig = None,
+        order_manager: Optional[OrderManager] = None,
     ):
         self.broker = broker
         self.config = config or LiveEngineConfig()
 
         # Core components
-        self.order_manager = OrderManager(broker)
+        self.order_manager = order_manager or OrderManager(broker)
         self.signal_executor = SignalExecutor(broker, self.order_manager)
 
         # Strategy management
@@ -73,6 +74,9 @@ class LiveTradingEngine:
         connected = await self.broker.connect()
         if not connected:
             raise ConnectionError("Failed to connect to broker")
+
+        # Ensure order manager persistence is ready before handling signals
+        await self.order_manager.initialize()
 
         # Load initial state
         await self._load_state()

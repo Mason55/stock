@@ -13,6 +13,7 @@ from src.api.stock_api import (
 )
 from src.services.fundamental_provider import fundamental_data_provider
 from src.services.sentiment_provider import sentiment_data_provider
+from src.services.etf_analyzer import etf_analyzer
 import json
 
 def analyze_stock(stock_code: str):
@@ -129,6 +130,56 @@ def analyze_stock(stock_code: str):
         rsi = None
         macd = None
         macd_signal = None
+
+    # 2.5 ETF专项分析 (如果是ETF)
+    is_etf = etf_analyzer.is_etf(stock_code, company_name)
+    if is_etf:
+        print(f"\n【ETF专项分析】")
+
+        # ETF基本信息
+        etf_info = etf_analyzer.get_etf_info(stock_code)
+        if etf_info:
+            print(f"  ETF信息:")
+            if etf_info.get('etf_name'):
+                print(f"    名称: {etf_info['etf_name']}")
+            if etf_info.get('fund_company'):
+                print(f"    基金公司: {etf_info['fund_company']}")
+            if etf_info.get('tracking_index'):
+                print(f"    跟踪指数: {etf_info['tracking_index']}")
+            if etf_info.get('fund_size'):
+                print(f"    基金规模: {etf_info['fund_size']:.2f}亿元")
+            if etf_info.get('establishment_date'):
+                print(f"    成立日期: {etf_info['establishment_date']}")
+            if etf_info.get('management_fee'):
+                print(f"    管理费率: {etf_info['management_fee']*100:.2f}%")
+
+        # ETF溢价率
+        premium = etf_analyzer.get_premium_discount(stock_code)
+        if premium:
+            print(f"\n  溢价率分析:")
+            print(f"    市场价格: ¥{premium['market_price']:.3f}")
+            if premium.get('nav'):
+                print(f"    单位净值: ¥{premium['nav']:.3f}")
+                print(f"    溢价率: {premium['premium_rate']:+.2f}%")
+                status_icon = "⚠️ " if abs(premium['premium_rate']) > 2 else "✓ "
+                status_map = {
+                    'premium': f"{status_icon}溢价交易 (市价>净值)",
+                    'discount': f"{status_icon}折价交易 (市价<净值)",
+                    'fair': "✓ 合理定价 (接近净值)"
+                }
+                print(f"    状态: {status_map.get(premium['status'], premium['status'])}")
+            else:
+                print(f"    单位净值: 未获取")
+                print(f"    注: NAV数据可能需要盘后更新")
+
+        # 资金流向
+        fund_flow = etf_analyzer.get_fund_flow(stock_code, days=5)
+        if fund_flow:
+            print(f"\n  资金流向 (近{fund_flow['period_days']}日):")
+            print(f"    净流向: ¥{fund_flow['net_flow']/100000000:.2f}亿")
+            trend_icon = "📈" if fund_flow['trend'] == 'inflow' else "📉" if fund_flow['trend'] == 'outflow' else "➡️"
+            trend_map = {'inflow': '净流入', 'outflow': '净流出', 'neutral': '平衡'}
+            print(f"    趋势: {trend_icon} {trend_map.get(fund_flow['trend'], fund_flow['trend'])}")
 
     # 3. 基本面分析
     print(f"\n【基本面分析】")

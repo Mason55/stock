@@ -13,6 +13,7 @@ import pandas as pd
 import requests
 
 from config.settings import settings
+from src.cache.persistent_cache import get_persistent_cache
 
 try:
     import yaml
@@ -23,13 +24,20 @@ except Exception:  # pragma: no cover - PyYAML optional
 class FundamentalDataProvider:
     """Load fundamental metrics from configurable sources."""
 
-    def __init__(self):
+    def __init__(self, use_persistent_cache: bool = True):
         self.logger = logging.getLogger(__name__)
         self.api_endpoint: Optional[str] = settings.FUNDAMENTAL_DATA_API
         self.local_path = Path(settings.FUNDAMENTAL_DATA_PATH) if settings.FUNDAMENTAL_DATA_PATH else None
         self.timeout = settings.FUNDAMENTAL_DATA_TIMEOUT
-        self.cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl: Dict[str, float] = {}  # track cache timestamp
+
+        # Use persistent cache instead of memory cache
+        self.use_persistent_cache = use_persistent_cache
+        if self.use_persistent_cache:
+            self.cache_manager = get_persistent_cache()
+        else:
+            # Fallback to memory cache for backward compatibility
+            self.cache: Dict[str, Dict[str, Any]] = {}
+            self.cache_ttl: Dict[str, float] = {}
 
         if self.local_path:
             self._load_local_file(self.local_path)
@@ -288,40 +296,74 @@ class FundamentalDataProvider:
             "updated_at": payload.get("updated_at"),
         }
 
-    def _is_cache_valid(self, stock_code: str, max_age_seconds: int = 86400) -> bool:
-        """Check if cache entry is still valid (default: 24 hours)"""
-        if stock_code not in self.cache_ttl:
-            return False
-        age = time.time() - self.cache_ttl[stock_code]
-        return age < max_age_seconds
-
     def get_fundamental_analysis(
         self, stock_code: str, price_hint: Optional[float] = None
     ) -> Optional[Dict[str, Any]]:
         stock_code = stock_code.upper()
 
-        # Check cache with TTL validation
-        if stock_code in self.cache and self._is_cache_valid(stock_code):
-            self.logger.debug("Using cached fundamental data for %s", stock_code)
-            return copy.deepcopy(self.cache[stock_code])
+        # Use persistent cache
+        if self.use_persistent_cache:
+            cache_key = f"fundamental:{stock_code}"
+            cached_data = self.cache_manager.get(cache_key, max_age=86400)  # 24 hours
+            if cached_data:
+                self.logger.debug("Using persistent cached fundamental data for %s", stock_code)
+                return copy.deepcopy(cached_data)
 
-        # Try API first
-        api_data = self._request_api(stock_code)
-        if api_data:
-            self.cache[stock_code] = api_data
-            self.cache_ttl[stock_code] = time.time()
-            return copy.deepcopy(api_data)
+            # Try API first
+            api_data = self._request_api(stock_code)
+            if api_data:
+                self.cache_manager.set(
+                    cache_key,
+                    api_data,
+                    ttl=86400,
+                    data_type="fundamental",
+                    stock_code=stock_code
+                )
+                return copy.deepcopy(api_data)
 
-        # Fallback to Sina financial crawler
-        self.logger.info("Falling back to Sina financials for %s", stock_code)
-        sina_data = self._fetch_sina_financials(stock_code, price_hint=price_hint)
-        if sina_data:
-            self.cache[stock_code] = sina_data
-            self.cache_ttl[stock_code] = time.time()
-            return copy.deepcopy(sina_data)
+            # Fallback to Sina financial crawler
+            self.logger.info("Falling back to Sina financials for %s", stock_code)
+            sina_data = self._fetch_sina_financials(stock_code, price_hint=price_hint)
+            if sina_data:
+                self.cache_manager.set(
+                    cache_key,
+                    sina_data,
+                    ttl=86400,
+                    data_type="fundamental",
+                    stock_code=stock_code
+                )
+                return copy.deepcopy(sina_data)
+
+        else:
+            # Fallback to memory cache
+            if stock_code in self.cache and self._is_cache_valid(stock_code):
+                self.logger.debug("Using cached fundamental data for %s", stock_code)
+                return copy.deepcopy(self.cache[stock_code])
+
+            # Try API first
+            api_data = self._request_api(stock_code)
+            if api_data:
+                self.cache[stock_code] = api_data
+                self.cache_ttl[stock_code] = time.time()
+                return copy.deepcopy(api_data)
+
+            # Fallback to Sina financial crawler
+            self.logger.info("Falling back to Sina financials for %s", stock_code)
+            sina_data = self._fetch_sina_financials(stock_code, price_hint=price_hint)
+            if sina_data:
+                self.cache[stock_code] = sina_data
+                self.cache_ttl[stock_code] = time.time()
+                return copy.deepcopy(sina_data)
 
         self.logger.warning("No fundamental data available for %s", stock_code)
         return None
+
+    def _is_cache_valid(self, stock_code: str, max_age_seconds: int = 86400) -> bool:
+        """Check if memory cache entry is still valid (default: 24 hours)"""
+        if not hasattr(self, 'cache_ttl') or stock_code not in self.cache_ttl:
+            return False
+        age = time.time() - self.cache_ttl[stock_code]
+        return age < max_age_seconds
 
 
 fundamental_data_provider = FundamentalDataProvider()

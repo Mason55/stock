@@ -10,6 +10,7 @@ from typing import Dict, Optional, Any, List
 import requests
 
 from config.settings import settings
+from src.cache.persistent_cache import get_persistent_cache
 
 try:
     import yaml
@@ -20,13 +21,20 @@ except Exception:  # pragma: no cover - optional dependency guard
 class SentimentDataProvider:
     """Aggregate sentiment metrics from API or local files."""
 
-    def __init__(self):
+    def __init__(self, use_persistent_cache: bool = True):
         self.logger = logging.getLogger(__name__)
         self.api_endpoint: Optional[str] = settings.SENTIMENT_DATA_API
         self.local_path = Path(settings.SENTIMENT_DATA_PATH) if settings.SENTIMENT_DATA_PATH else None
         self.timeout = settings.SENTIMENT_DATA_TIMEOUT
-        self.cache: Dict[str, Dict[str, Any]] = {}
-        self.cache_ttl: Dict[str, float] = {}  # track cache timestamp
+
+        # Use persistent cache instead of memory cache
+        self.use_persistent_cache = use_persistent_cache
+        if self.use_persistent_cache:
+            self.cache_manager = get_persistent_cache()
+        else:
+            # Fallback to memory cache for backward compatibility
+            self.cache: Dict[str, Dict[str, Any]] = {}
+            self.cache_ttl: Dict[str, float] = {}
 
         # Rate limiting for crawler
         self.last_crawl_time: Dict[str, float] = {}  # stock_code -> timestamp
@@ -398,45 +406,92 @@ class SentimentDataProvider:
             self.logger.warning(f"EastMoney Guba fetch failed for {stock_code}: {exc}")
             return None
 
-    def _is_cache_valid(self, stock_code: str, max_age_seconds: int = 3600) -> bool:
-        """Check if cache entry is still valid (default: 1 hour for sentiment data)"""
-        if stock_code not in self.cache_ttl:
-            return False
-        age = time.time() - self.cache_ttl[stock_code]
-        return age < max_age_seconds
-
     def get_sentiment_analysis(self, stock_code: str) -> Optional[Dict[str, Any]]:
         stock_code = stock_code.upper()
 
-        # Check cache with TTL validation
-        if stock_code in self.cache and self._is_cache_valid(stock_code):
-            self.logger.debug("Using cached sentiment data for %s", stock_code)
-            return self.cache[stock_code]
+        # Use persistent cache
+        if self.use_persistent_cache:
+            cache_key = f"sentiment:{stock_code}"
+            cached_data = self.cache_manager.get(cache_key, max_age=3600)  # 1 hour
+            if cached_data:
+                self.logger.debug("Using persistent cached sentiment data for %s", stock_code)
+                return cached_data
 
-        # Try API first
-        api_data = self._request_api(stock_code)
-        if api_data:
-            self.cache[stock_code] = api_data
-            self.cache_ttl[stock_code] = time.time()
-            return api_data
+            # Try API first
+            api_data = self._request_api(stock_code)
+            if api_data:
+                self.cache_manager.set(
+                    cache_key,
+                    api_data,
+                    ttl=3600,
+                    data_type="sentiment",
+                    stock_code=stock_code
+                )
+                return api_data
 
-        # Fallback to EastMoney Guba crawler
-        self.logger.info("Attempting EastMoney Guba for %s", stock_code)
-        guba_data = self._fetch_eastmoney_sentiment(stock_code)
-        if guba_data:
-            self.cache[stock_code] = guba_data
-            self.cache_ttl[stock_code] = time.time()
-            return guba_data
+            # Fallback to EastMoney Guba crawler
+            self.logger.info("Attempting EastMoney Guba for %s", stock_code)
+            guba_data = self._fetch_eastmoney_sentiment(stock_code)
+            if guba_data:
+                self.cache_manager.set(
+                    cache_key,
+                    guba_data,
+                    ttl=3600,
+                    data_type="sentiment",
+                    stock_code=stock_code
+                )
+                return guba_data
 
-        # Final fallback to technical-derived sentiment
-        self.logger.info("Using technical-derived sentiment for %s", stock_code)
-        simple_data = self._fetch_simple_sentiment(stock_code)
-        if simple_data:
-            self.cache[stock_code] = simple_data
-            self.cache_ttl[stock_code] = time.time()
-            return simple_data
+            # Final fallback to technical-derived sentiment
+            self.logger.info("Using technical-derived sentiment for %s", stock_code)
+            simple_data = self._fetch_simple_sentiment(stock_code)
+            if simple_data:
+                self.cache_manager.set(
+                    cache_key,
+                    simple_data,
+                    ttl=3600,
+                    data_type="sentiment",
+                    stock_code=stock_code
+                )
+                return simple_data
+
+        else:
+            # Fallback to memory cache
+            if stock_code in self.cache and self._is_cache_valid(stock_code):
+                self.logger.debug("Using cached sentiment data for %s", stock_code)
+                return self.cache[stock_code]
+
+            # Try API first
+            api_data = self._request_api(stock_code)
+            if api_data:
+                self.cache[stock_code] = api_data
+                self.cache_ttl[stock_code] = time.time()
+                return api_data
+
+            # Fallback to EastMoney Guba crawler
+            self.logger.info("Attempting EastMoney Guba for %s", stock_code)
+            guba_data = self._fetch_eastmoney_sentiment(stock_code)
+            if guba_data:
+                self.cache[stock_code] = guba_data
+                self.cache_ttl[stock_code] = time.time()
+                return guba_data
+
+            # Final fallback to technical-derived sentiment
+            self.logger.info("Using technical-derived sentiment for %s", stock_code)
+            simple_data = self._fetch_simple_sentiment(stock_code)
+            if simple_data:
+                self.cache[stock_code] = simple_data
+                self.cache_ttl[stock_code] = time.time()
+                return simple_data
 
         self.logger.warning("No sentiment data available for %s", stock_code)
         return None
+
+    def _is_cache_valid(self, stock_code: str, max_age_seconds: int = 3600) -> bool:
+        """Check if memory cache entry is still valid (default: 1 hour for sentiment data)"""
+        if not hasattr(self, 'cache_ttl') or stock_code not in self.cache_ttl:
+            return False
+        age = time.time() - self.cache_ttl[stock_code]
+        return age < max_age_seconds
 
 sentiment_data_provider = SentimentDataProvider()

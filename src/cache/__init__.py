@@ -8,13 +8,19 @@ from .cache_manager import (
     get_cache_manager,
     cached
 )
+from .persistent_cache import (
+    PersistentCacheManager,
+    get_persistent_cache
+)
 
 __all__ = [
     'IntelligentCacheManager',
-    'SmartCacheInvalidator', 
+    'SmartCacheInvalidator',
     'CacheLevel',
     'CacheEntry',
     'initialize_cache',
     'get_cache_manager',
-    'cached'
+    'cached',
+    'PersistentCacheManager',
+    'get_persistent_cache'
 ]

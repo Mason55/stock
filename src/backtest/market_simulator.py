@@ -139,53 +139,61 @@ class MarketSimulator:
     async def process_order(self, order: Order, market_data: pd.DataFrame, timestamp: datetime) -> Optional[Dict]:
         """
         Process order through market simulation
-        
+
         Args:
             order: Order to process
             market_data: Historical market data for the symbol
             timestamp: Current simulation timestamp
-            
+
         Returns:
             Dict with fill information or None if no fill
         """
-        
+        logger.info(f"[MarketSim] Processing {order.side} {order.quantity} {order.symbol} @ {timestamp}")
+
         if not self.is_trading_time(timestamp):
-            logger.debug(f"Order {order.order_id} rejected: outside trading hours")
+            logger.warning(f"[MarketSim] Order {order.order_id} rejected: outside trading hours (timestamp: {timestamp})")
             return None
-        
+
         # Get current market data
         current_data = self._get_current_market_data(market_data, timestamp)
         if current_data is None:
-            logger.debug(f"No market data available for {order.symbol} at {timestamp}")
+            logger.warning(f"[MarketSim] No market data available for {order.symbol} at {timestamp}")
             return None
-        
+
+        logger.info(f"[MarketSim] Current data: open={current_data.get('open')}, close={current_data.get('close')}, volume={current_data.get('volume')}")
+
         # Extract prices
         open_price = Decimal(str(current_data.get('open', 0)))
         high_price = Decimal(str(current_data.get('high', 0)))
         low_price = Decimal(str(current_data.get('low', 0)))
         close_price = Decimal(str(current_data.get('close', 0)))
         volume = int(current_data.get('volume', 0))
-        
+
         # Check for suspension
         if current_data.get('is_suspended', False):
-            logger.debug(f"Order {order.order_id} rejected: stock suspended")
+            logger.warning(f"[MarketSim] Order {order.order_id} rejected: stock suspended")
             return None
-        
+
         # Calculate price limits
         prev_close = Decimal(str(current_data.get('pre_close', close_price)))
         upper_limit, lower_limit = self.calculate_price_limits(order.symbol, prev_close)
-        
+
         # Check for limit up/down
         is_limit_up = close_price >= upper_limit
         is_limit_down = close_price <= lower_limit
-        
+
         # Process different order types
         if order.order_type == OrderType.MARKET:
-            return await self._process_market_order(order, current_data, upper_limit, lower_limit)
+            result = await self._process_market_order(order, current_data, upper_limit, lower_limit)
+            if result:
+                logger.info(f"[MarketSim] Market order filled: {result['quantity']} @ ¥{result['price']}")
+            else:
+                logger.warning(f"[MarketSim] Market order NOT filled")
+            return result
         elif order.order_type == OrderType.LIMIT:
             return await self._process_limit_order(order, current_data, upper_limit, lower_limit)
         else:
-            logger.warning(f"Order type {order.order_type} not supported")
+            logger.warning(f"[MarketSim] Order type {order.order_type} not supported")
             return None
     
     def _get_current_market_data(self, market_data: pd.DataFrame, timestamp: datetime) -> Optional[Dict]:

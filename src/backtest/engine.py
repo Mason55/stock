@@ -221,7 +221,12 @@ class Portfolio(EventHandler):
         """Convert signals to orders"""
         # Simple signal to order conversion
         if event.signal_type == "BUY":
-            quantity = self.calculate_position_size(event.symbol, event.strength)
+            # Use quantity from metadata if provided, otherwise calculate
+            if event.metadata and 'quantity' in event.metadata:
+                quantity = event.metadata['quantity']
+            else:
+                quantity = self.calculate_position_size(event.symbol, event.strength)
+
             if quantity > 0:
                 order = self.create_market_order(event.symbol, OrderSide.BUY, quantity)
                 # Submit order to event queue for processing
@@ -230,16 +235,23 @@ class Portfolio(EventHandler):
                     await self.event_queue.put(order_event)
                 return order
         elif event.signal_type == "SELL":
-            current_position = self.positions.get(event.symbol, 0)
-            if current_position > 0:
-                quantity = int(current_position * event.strength)
-                if quantity > 0:
-                    order = self.create_market_order(event.symbol, OrderSide.SELL, quantity)
-                    # Submit order to event queue for processing
-                    if self.event_queue:
-                        order_event = OrderEvent(timestamp=event.timestamp, order=order)
-                        await self.event_queue.put(order_event)
-                    return order
+            # Use quantity from metadata if provided
+            if event.metadata and 'quantity' in event.metadata:
+                quantity = event.metadata['quantity']
+            else:
+                current_position = self.positions.get(event.symbol, 0)
+                if current_position > 0:
+                    quantity = int(current_position * event.strength)
+                else:
+                    quantity = 0
+
+            if quantity > 0:
+                order = self.create_market_order(event.symbol, OrderSide.SELL, quantity)
+                # Submit order to event queue for processing
+                if self.event_queue:
+                    order_event = OrderEvent(timestamp=event.timestamp, order=order)
+                    await self.event_queue.put(order_event)
+                return order
 
         return None
     
@@ -475,27 +487,42 @@ class BacktestEngine:
     
     async def _process_order(self, order: Order):
         """Process an order through the market simulator"""
+        logger.info(f"[Engine] Processing order: {order.side} {order.quantity} {order.symbol}")
+
         # Risk check
         if not await self.risk_manager.check_order(order, self.portfolio):
             order.status = OrderStatus.REJECTED
             order.reject_reason = "Risk check failed"
+            logger.warning(f"[Engine] Order REJECTED by risk manager")
             return
-        
+
+        logger.info(f"[Engine] Order passed risk check, sending to market simulator")
+
         # Market simulation
         fill_result = await self.market_simulator.process_order(
-            order, 
+            order,
             self.market_data.get(order.symbol),
             self.current_time
         )
-        
+
+        logger.info(f"[Engine] Market simulator returned: {fill_result}")
+
         if fill_result:
             # Calculate costs
             commission = self.cost_model.calculate_commission(
-                order.symbol, 
-                fill_result['quantity'], 
+                order.symbol,
+                fill_result['quantity'],
                 fill_result['price']
             )
-            
+
+            logger.info(f"[Engine] Creating fill event: qty={fill_result['quantity']}, price={fill_result['price']}, commission={commission}")
+
+            # Update order with fill information
+            order.filled_quantity = fill_result['quantity']
+            order.avg_fill_price = fill_result['price']
+            order.commission = commission
+            order.status = OrderStatus.FILLED
+
             # Generate fill event
             fill_event = FillEvent(
                 timestamp=self.current_time,
@@ -505,8 +532,11 @@ class BacktestEngine:
                 price=fill_result['price'],
                 commission=commission
             )
-            
+
             await self.event_queue.put(fill_event)
+            logger.info(f"[Engine] Order FILLED successfully")
+        else:
+            logger.warning(f"[Engine] Market simulator returned None - order NOT filled")
     
     async def _generate_results(self) -> Dict:
         """Generate backtest results"""

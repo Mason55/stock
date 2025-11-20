@@ -79,9 +79,9 @@ class ETFTTradingStrategy(Strategy):
 
         # Technical indicators
         self.rsi_period = config.get("rsi_period", 14)
-        self.rsi_oversold = config.get("rsi_oversold", 30)
-        self.rsi_overbought = config.get("rsi_overbought", 70)
-        self.support_lookback = config.get("support_lookback", 20)
+        self.rsi_oversold = config.get("rsi_oversold", 35)
+        self.rsi_overbought = config.get("rsi_overbought", 65)
+        self.support_lookback = config.get("support_lookback", 10)
 
         # ETF specific
         self.premium_threshold = config.get("premium_threshold", 1.0)
@@ -228,10 +228,10 @@ class ETFTTradingStrategy(Strategy):
 
         # RSI signals
         if rsi < self.rsi_oversold:
-            buy_strength += 30
+            buy_strength += 40
             reasons.append(f"RSI oversold ({rsi:.1f})")
         elif rsi > self.rsi_overbought:
-            sell_strength += 30
+            sell_strength += 40
             reasons.append(f"RSI overbought ({rsi:.1f})")
 
         # Support/Resistance signals

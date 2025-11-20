@@ -66,6 +66,7 @@ class FillEvent:
     quantity: int
     price: Decimal
     commission: Decimal
+    side: Optional[OrderSide] = None
     data: Any = None
     
     def __post_init__(self):
@@ -123,13 +124,19 @@ class Strategy(EventHandler):
         if event.symbol not in self.position:
             self.position[event.symbol] = 0
         
-        # Note: FillEvent doesn't directly store order side
-        # This would need to be passed from the order or portfolio context
-        # For now, we'll determine from quantity sign or add order reference
-        if event.quantity > 0:
-            self.position[event.symbol] += event.quantity
+        # Use side from event if available
+        if event.side:
+            if event.side == OrderSide.BUY:
+                self.position[event.symbol] += event.quantity
+            elif event.side == OrderSide.SELL:
+                self.position[event.symbol] -= event.quantity
         else:
-            self.position[event.symbol] -= abs(event.quantity)
+            # Fallback: determine from quantity sign (if negative quantity supported)
+            # or blindly add if we assume quantity always positive and side unknown
+            if event.quantity > 0:
+                self.position[event.symbol] += event.quantity
+            else:
+                self.position[event.symbol] -= abs(event.quantity)
     
     def generate_signal(self, symbol: str, signal_type: str, strength: float = 1.0, metadata: Dict = None):
         """Generate a trading signal and submit to event queue.
@@ -530,7 +537,8 @@ class BacktestEngine:
                 symbol=order.symbol,
                 quantity=fill_result['quantity'],
                 price=fill_result['price'],
-                commission=commission
+                commission=commission,
+                side=order.side
             )
 
             await self.event_queue.put(fill_event)

@@ -73,6 +73,10 @@ class ETFTTradingStrategy(Strategy):
         self.t_ratio = config.get("t_ratio", 0.3)  # 30% of position
         self.base_position_ratio = config.get("base_position_ratio", 0.7)  # Keep 70% as base
 
+        # Risk management
+        self.stop_loss_pct = config.get("stop_loss_pct", 0.03)  # 3% stop loss
+        self.max_hold_days = config.get("max_hold_days", 5)  # Max hold 5 days for T trade
+
         # Technical indicators
         self.rsi_period = config.get("rsi_period", 14)
         self.rsi_oversold = config.get("rsi_oversold", 30)
@@ -97,7 +101,8 @@ class ETFTTradingStrategy(Strategy):
 
         logger.info(
             f"ETF T-Trading Strategy initialized: mode={self.mode.value}, "
-            f"t_ratio={self.t_ratio}, rsi_period={self.rsi_period}"
+            f"t_ratio={self.t_ratio}, rsi_period={self.rsi_period}, "
+            f"stop_loss={self.stop_loss_pct:.1%}, max_hold={self.max_hold_days}d"
         )
 
     def _init_symbol_data(self, symbol: str):
@@ -158,6 +163,9 @@ class ETFTTradingStrategy(Strategy):
         price = price_data.get('close')
         high = price_data.get('high')
         low = price_data.get('low')
+        
+        # Get timestamp from event
+        current_time = event.timestamp
 
         if price is None:
             logger.warning(f"No close price in market data for {symbol}")
@@ -204,13 +212,13 @@ class ETFTTradingStrategy(Strategy):
         # Generate T trading signals
         await self._generate_t_signals(
             symbol, price, rsi, support, resistance,
-            current_premium, current_pos, t_pos, state
+            current_premium, current_pos, t_pos, state, current_time
         )
 
     async def _generate_t_signals(self, symbol: str, price: float, rsi: float,
                                   support: float, resistance: float,
                                   premium_rate: float, current_pos: int,
-                                  t_pos: int, state: str):
+                                  t_pos: int, state: str, current_time: datetime):
         """Generate T trading signals based on market conditions"""
 
         # Signal strength accumulator
@@ -248,7 +256,19 @@ class ETFTTradingStrategy(Strategy):
             f"Mode: {self.mode.value}, Current pos: {current_pos}"
         )
 
-        if self.mode == TradingMode.REGULAR_T or (self.mode == TradingMode.AUTO and current_pos > 0):
+        # Determine effective mode for AUTO
+        effective_mode = self.mode
+        if self.mode == TradingMode.AUTO:
+            if state == 'waiting_sell':
+                effective_mode = TradingMode.REVERSE_T
+            elif state == 'waiting_buy':
+                effective_mode = TradingMode.REGULAR_T
+            elif current_pos > 0:
+                effective_mode = TradingMode.REGULAR_T
+            else:
+                effective_mode = TradingMode.REVERSE_T
+
+        if effective_mode == TradingMode.REGULAR_T:
             # Regular T: Need base position
             if state == 'idle' and sell_strength > buy_strength and sell_strength >= 35:  # Lowered from 50
                 # Sell signal: Sell part of base position
@@ -288,7 +308,7 @@ class ETFTTradingStrategy(Strategy):
                     self.t_position[symbol] = 0
                     logger.info(f"Regular T BUY: {symbol} {buy_qty} @ ¥{price:.3f}, profit: ¥{(self.t_entry_price[symbol] - price) * buy_qty:.2f}")
 
-        elif self.mode == TradingMode.REVERSE_T or (self.mode == TradingMode.AUTO and current_pos == 0):
+        elif effective_mode == TradingMode.REVERSE_T:
             # Reverse T: Buy first, sell next day
             if state == 'idle' and buy_strength > sell_strength and buy_strength >= 35:  # Lowered from 50
                 # Buy signal: Buy new position for T trading
@@ -309,30 +329,69 @@ class ETFTTradingStrategy(Strategy):
                     self.t_state[symbol] = 'waiting_sell'
                     self.t_entry_price[symbol] = price
                     self.t_position[symbol] = buy_qty
-                    self.last_trade_date[symbol] = datetime.now()
+                    self.last_trade_date[symbol] = current_time
                     logger.info(f"Reverse T BUY: {symbol} {buy_qty} @ ¥{price:.3f}, reasons: {reasons}")
 
-            elif state == 'waiting_sell' and sell_strength > buy_strength and sell_strength >= 35:  # Lowered from 50
-                # Sell signal: Sell the T position (must be next day due to T+1)
+            elif state == 'waiting_sell':
+                # Check strict exit conditions first (Stop Loss / Time Exit)
                 sell_qty = self.t_position.get(symbol, 0)
-                last_trade = self.last_trade_date.get(symbol, datetime.now())
-
-                # Check if we can sell (T+1 rule: must wait until next day)
-                if sell_qty > 0 and (datetime.now() - last_trade).days >= 1:
-                    if price > self.t_entry_price.get(symbol, 0):
+                last_trade = self.last_trade_date.get(symbol, current_time)
+                entry_price = self.t_entry_price.get(symbol, price)
+                
+                if sell_qty > 0:
+                    # 1. Stop Loss Check
+                    if price < entry_price * (1 - self.stop_loss_pct):
                         self.generate_signal(
                             symbol, 'SELL',
-                            strength=sell_strength / 100,
+                            strength=1.0,  # Max strength for forced exit
                             metadata={
                                 'quantity': sell_qty,
-                                'reasons': reasons,
-                                't_type': 'reverse_t_sell',
-                                'expected_profit': (price - self.t_entry_price[symbol]) * sell_qty
+                                'reasons': [f"Stop Loss triggered (Price: {price:.3f} < Entry: {entry_price:.3f} * {(1-self.stop_loss_pct):.2f})"],
+                                't_type': 'stop_loss_sell',
+                                'loss': (entry_price - price) * sell_qty
                             }
                         )
                         self.t_state[symbol] = 'idle'
                         self.t_position[symbol] = 0
-                        logger.info(f"Reverse T SELL: {symbol} {sell_qty} @ ¥{price:.3f}, profit: ¥{(price - self.t_entry_price[symbol]) * sell_qty:.2f}")
+                        logger.info(f"Stop Loss SELL: {symbol} {sell_qty} @ ¥{price:.3f}, loss: ¥{(entry_price - price) * sell_qty:.2f}")
+                        return
+
+                    # 2. Time Exit Check (Force sell if held too long)
+                    days_held = (current_time - last_trade).days
+                    if days_held >= self.max_hold_days:
+                        self.generate_signal(
+                            symbol, 'SELL',
+                            strength=0.8,
+                            metadata={
+                                'quantity': sell_qty,
+                                'reasons': [f"Max hold time exceeded ({days_held} days)"],
+                                't_type': 'time_exit_sell',
+                                'profit': (price - entry_price) * sell_qty
+                            }
+                        )
+                        self.t_state[symbol] = 'idle'
+                        self.t_position[symbol] = 0
+                        logger.info(f"Time Exit SELL: {symbol} {sell_qty} @ ¥{price:.3f}, days held: {days_held}")
+                        return
+
+                    # 3. Normal Profit Take Check (T+1 rule)
+                    if sell_strength > buy_strength and sell_strength >= 35:
+                        # Check if we can sell (T+1 rule: must wait until next day)
+                        if days_held >= 1:
+                            if price > entry_price:
+                                self.generate_signal(
+                                    symbol, 'SELL',
+                                    strength=sell_strength / 100,
+                                    metadata={
+                                        'quantity': sell_qty,
+                                        'reasons': reasons,
+                                        't_type': 'reverse_t_sell',
+                                        'expected_profit': (price - entry_price) * sell_qty
+                                    }
+                                )
+                                self.t_state[symbol] = 'idle'
+                                self.t_position[symbol] = 0
+                                logger.info(f"Reverse T SELL: {symbol} {sell_qty} @ ¥{price:.3f}, profit: ¥{(price - entry_price) * sell_qty:.2f}")
 
     def get_t_status(self, symbol: str) -> Dict:
         """Get current T trading status for a symbol"""

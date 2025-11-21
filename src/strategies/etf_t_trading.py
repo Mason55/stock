@@ -75,7 +75,14 @@ class ETFTTradingStrategy(Strategy):
 
         # Risk management
         self.stop_loss_pct = config.get("stop_loss_pct", 0.03)  # 3% stop loss
+        self.take_profit_pct = config.get("take_profit_pct", 0.007)  # 0.7% take profit
         self.max_hold_days = config.get("max_hold_days", 5)  # Max hold 5 days for T trade
+        self.t_quantity = config.get("t_quantity", 0)  # Fixed T quantity if specified
+
+        # Breakeven tracking
+        self.cost_basis = config.get("cost_basis", 0.0)
+        self.target_profit = config.get("target_profit", 0.0)
+        self.accumulated_profit = 0.0
 
         # Technical indicators
         self.rsi_period = config.get("rsi_period", 14)
@@ -101,8 +108,9 @@ class ETFTTradingStrategy(Strategy):
 
         logger.info(
             f"ETF T-Trading Strategy initialized: mode={self.mode.value}, "
-            f"t_ratio={self.t_ratio}, rsi_period={self.rsi_period}, "
-            f"stop_loss={self.stop_loss_pct:.1%}, max_hold={self.max_hold_days}d"
+            f"t_ratio={self.t_ratio}, t_quantity={self.t_quantity}, rsi_period={self.rsi_period}, "
+            f"stop_loss={self.stop_loss_pct:.1%}, take_profit={self.take_profit_pct:.1%}, "
+            f"max_hold={self.max_hold_days}d, target_profit=¥{self.target_profit:.2f}"
         )
 
     def _init_symbol_data(self, symbol: str):
@@ -399,5 +407,16 @@ class ETFTTradingStrategy(Strategy):
             'state': self.t_state.get(symbol, 'idle'),
             'entry_price': self.t_entry_price.get(symbol, 0),
             't_position': self.t_position.get(symbol, 0),
-            'last_trade_date': self.last_trade_date.get(symbol, None)
+            'last_trade_date': self.last_trade_date.get(symbol, None),
+            'accumulated_profit': self.accumulated_profit,
+            'target_profit': self.target_profit,
+            'progress': (self.accumulated_profit / self.target_profit * 100) if self.target_profit > 0 else 0
         }
+
+    def record_profit(self, profit: float):
+        """Record profit from a completed T trade"""
+        self.accumulated_profit += profit
+        if self.target_profit > 0:
+            progress = self.accumulated_profit / self.target_profit * 100
+            logger.info(f"T-Trade profit: ¥{profit:.2f}, Total: ¥{self.accumulated_profit:.2f}, "
+                       f"Progress: {progress:.1f}% towards ¥{self.target_profit:.2f}")

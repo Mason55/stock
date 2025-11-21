@@ -196,6 +196,28 @@ class MockBrokerGateway(BrokerAdapter):
         """Mock quote unsubscription."""
         logger.info(f"Unsubscribed from quotes: {symbols}")
 
+    def _add_initial_position(self, symbol: str, quantity: int, avg_price: float):
+        """Add initial position (for live trading with existing holdings)"""
+        self.positions[symbol] = Position(
+            account_id="MOCK_ACCOUNT",
+            symbol=symbol,
+            quantity=quantity,
+            available_quantity=quantity,
+            avg_cost=Decimal(str(avg_price)),
+            last_price=Decimal(str(avg_price)),
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow()
+        )
+        logger.info(f"Initial position added: {symbol} {quantity} shares @ ¥{avg_price:.3f}")
+
+    def update_market_price(self, symbol: str, price: float):
+        """Update market price for simulation"""
+        self._market_prices[symbol] = Decimal(str(price))
+
+        # Update position last_price if exists
+        if symbol in self.positions:
+            self.positions[symbol].last_price = Decimal(str(price))
+
     async def get_quote(self, symbol: str) -> Optional[Dict]:
         """Get latest quote."""
         price = self._market_prices.get(symbol)

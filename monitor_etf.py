@@ -20,7 +20,7 @@ class ETFMonitor:
 
     def __init__(self, etf_code: str):
         self.etf_code = etf_code
-        self.analyzer = ETFAnalyzer(use_cache=True)
+        self.analyzer = ETFAnalyzer(use_cache=False)  # Disable cache for real-time monitoring
         self.tech_analyzer = AdvancedTechnicalAnalyzer()
 
     def get_trading_signal(self, quote: Dict, premium_data: Dict, indicators) -> Dict[str, Any]:
@@ -106,13 +106,13 @@ class ETFMonitor:
         }
 
     def display_monitor_data(self):
-        """Display monitoring data"""
+        """Display monitoring data (simplified version)"""
         print('\033[2J\033[H', end='')
 
-        print('=' * 70)
-        print(f'ETF实时监控 - {self.etf_code}')
-        print(f'更新时间: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
-        print('=' * 70)
+        print('=' * 50)
+        print(f'ETF监控 - {self.etf_code}')
+        print(f'时间: {datetime.now().strftime("%H:%M:%S")}')
+        print('=' * 50)
 
         # Get real-time quote
         quote = fetch_sina_realtime_sync(self.etf_code)
@@ -120,137 +120,34 @@ class ETFMonitor:
             print('⚠️  无法获取实时行情')
             return
 
-        # Display quote
-        print('\n【实时行情】')
+        # Display simplified quote
         current_price = quote.get('current_price', 0)
-        change_pct = quote.get('change_percent', 0)
+        previous_close = quote.get('previous_close', 0)
+
+        # Calculate change percentage
+        if previous_close > 0:
+            change_pct = ((current_price - previous_close) / previous_close) * 100
+        else:
+            change_pct = 0
+
         change_symbol = '+' if change_pct >= 0 else ''
         color = '\033[91m' if change_pct < 0 else '\033[92m' if change_pct > 0 else '\033[0m'
 
-        print(f'  当前价格: ¥{current_price:.3f}  {color}{change_symbol}{change_pct:.2f}%\033[0m')
-        print(f'  今日开盘: ¥{quote.get("open", 0):.3f}')
-        print(f'  最高/最低: ¥{quote.get("high", 0):.3f} / ¥{quote.get("low", 0):.3f}')
+        print(f'\n当前价格: ¥{current_price:.3f}  {color}{change_symbol}{change_pct:.2f}%\033[0m')
+        print(f'开盘/最高/最低: ¥{quote.get("open_price", 0):.3f} / ¥{quote.get("high_price", 0):.3f} / ¥{quote.get("low_price", 0):.3f}')
 
-        daily_amplitude = 0
-        if quote.get('low', 0) > 0:
-            daily_amplitude = ((quote.get('high', 0) - quote.get('low', 0)) / quote.get('low', 0)) * 100
-        print(f'  日内振幅: {daily_amplitude:.2f}%')
-
-        volume_yi = quote.get('volume', 0) / 100000000
-        print(f'  成交量: {volume_yi:.2f}亿手')
-
-        # Premium rate analysis
-        print('\n【溢价率分析】')
+        # Premium rate
         premium_data = self.analyzer.get_premium_discount(self.etf_code)
         if premium_data and premium_data.get('premium_rate') is not None:
             premium_rate = premium_data['premium_rate']
             nav = premium_data['nav']
-            status = premium_data['status']
 
-            status_text = {
-                'premium': '⚠️  溢价',
-                'discount': '💰 折价',
-                'fair': '✓ 合理'
-            }.get(status, status)
-
-            print(f'  单位净值: ¥{nav:.3f}')
-            print(f'  溢价率: {premium_rate:+.2f}%  [{status_text}]')
-
-            if abs(premium_rate) > 1.0:
-                if premium_rate > 0:
-                    print('  💡 溢价较高，可考虑卖出做T')
-                else:
-                    print('  💡 折价明显，可考虑买入做T')
+            status_icon = '⚠️' if abs(premium_rate) > 1.0 else '✓'
+            print(f'\n净值: ¥{nav:.3f}  溢价率: {status_icon} {premium_rate:+.2f}%')
         else:
-            print('  ⚠️  溢价率数据暂不可用')
-            premium_data = {}
+            print('\n溢价率数据暂不可用')
 
-        # Technical analysis
-        print('\n【技术指标】')
-        df = fetch_history_df(self.etf_code, days=120)
-        indicators = None
-
-        if df is not None and not df.empty:
-            prices = df['close'].tolist()
-            highs = df['high'].tolist()
-            lows = df['low'].tolist()
-            volumes = df['volume'].tolist()
-
-            indicators = self.tech_analyzer.calculate_comprehensive_indicators(
-                prices=prices,
-                volumes=volumes,
-                highs=highs,
-                lows=lows,
-                current_price=current_price
-            )
-
-            if indicators:
-                # RSI
-                if indicators.rsi:
-                    rsi_status = '超卖' if indicators.rsi < 30 else '超买' if indicators.rsi > 70 else '中性'
-                    print(f'  RSI(14): {indicators.rsi:.2f}  [{rsi_status}]')
-
-                # MACD
-                if indicators.macd is not None:
-                    macd_status = '多头' if indicators.macd > (indicators.macd_signal or 0) else '空头'
-                    print(f'  MACD: {indicators.macd:.4f}  [{macd_status}]')
-
-                # KDJ
-                if indicators.kdj_k is not None:
-                    print(f'  KDJ: K={indicators.kdj_k:.1f} D={indicators.kdj_d:.1f} J={indicators.kdj_j:.1f}')
-
-                # Moving averages
-                if indicators.ma5 and indicators.ma20:
-                    print(f'  MA5: ¥{indicators.ma5:.3f}  MA20: ¥{indicators.ma20:.3f}')
-
-                    if current_price > indicators.ma5 > indicators.ma20:
-                        print(f'  趋势: 📈 多头排列')
-                    elif current_price < indicators.ma5 < indicators.ma20:
-                        print(f'  趋势: 📉 空头排列')
-                    else:
-                        print(f'  趋势: ↔️  震荡')
-
-                # Support and resistance
-                if indicators.support_level and indicators.resistance_level:
-                    print(f'  支撑位: ¥{indicators.support_level:.3f}  压力位: ¥{indicators.resistance_level:.3f}')
-
-                # Bollinger Bands
-                if indicators.bb_percent is not None:
-                    print(f'  布林带位置: {indicators.bb_percent:.1f}%')
-
-        # Trading signal
-        print('\n【交易信号】')
-        signal_data = self.get_trading_signal(quote, premium_data, indicators)
-
-        signal_icon = {
-            'BUY': '🟢 买入',
-            'SELL': '🔴 卖出',
-            'HOLD': '🟡 观望'
-        }.get(signal_data['signal'], signal_data['signal'])
-
-        print(f'  信号: {signal_icon}')
-        print(f'  置信度: {signal_data["confidence"]:.0f}%')
-        print(f'  理由:')
-        for reason in signal_data['reasons']:
-            print(f'    • {reason}')
-
-        # T trading suggestions
-        print('\n【做T建议】')
-        if signal_data['signal'] == 'BUY':
-            print('  ✓ 可考虑低吸做T（盘中回调时买入）')
-            if indicators and indicators.support_level:
-                print(f'  建议买入区间: ¥{indicators.support_level:.3f} - ¥{indicators.support_level * 1.02:.3f}')
-        elif signal_data['signal'] == 'SELL':
-            print('  ✓ 可考虑高抛做T（盘中反弹时卖出）')
-            if indicators and indicators.resistance_level:
-                print(f'  建议卖出区间: ¥{indicators.resistance_level * 0.98:.3f} - ¥{indicators.resistance_level:.3f}')
-        else:
-            print('  ⚠️  暂无明确机会，建议观望')
-
-        print(f'\n  ⚠️  A股实行T+1，当日买入次日才能卖出')
-        print(f'  💡 做T需要有底仓，或提前一天买入')
-
-        print('\n' + '=' * 70)
+        print('\n' + '=' * 50)
         print('按 Ctrl+C 停止监控')
 
 

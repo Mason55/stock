@@ -268,13 +268,30 @@ class ETFAnalyzer:
             if not market_price:
                 return None
 
-            # Try to get NAV (Net Asset Value) from multiple sources
+            # Try to get NAV (Net Asset Value) from multiple sources in order
+            nav = None
+            sources_tried = []
+
+            # 1. Try EastMoney (天天基金 - most reliable for real-time estimated NAV)
             nav = self._fetch_nav_from_eastmoney(etf_code)
-            if not nav:
-                nav = self._fetch_nav_from_jisilu(etf_code)
+            sources_tried.append('eastmoney')
+            if nav:
+                logger.info(f"NAV successfully fetched from EastMoney for {etf_code}: {nav}")
+            else:
+                # 2. Try Sina Finance
+                nav = self._fetch_nav_from_sina(etf_code)
+                sources_tried.append('sina')
+                if nav:
+                    logger.info(f"NAV successfully fetched from Sina for {etf_code}: {nav}")
+                else:
+                    # 3. Try Jisilu
+                    nav = self._fetch_nav_from_jisilu(etf_code)
+                    sources_tried.append('jisilu')
+                    if nav:
+                        logger.info(f"NAV successfully fetched from Jisilu for {etf_code}: {nav}")
 
             if not nav:
-                logger.warning(f"NAV not available for {etf_code}")
+                logger.error(f"NAV not available for {etf_code} after trying sources: {', '.join(sources_tried)}")
                 return {
                     'etf_code': etf_code,
                     'market_price': market_price,
@@ -282,7 +299,7 @@ class ETFAnalyzer:
                     'premium_rate': None,
                     'status': 'unknown',
                     'timestamp': datetime.now().isoformat(),
-                    'note': 'NAV data not available'
+                    'note': f'NAV data not available (tried: {", ".join(sources_tried)})'
                 }
 
             # Calculate premium/discount rate
@@ -310,7 +327,68 @@ class ETFAnalyzer:
             return None
 
     def _fetch_nav_from_eastmoney(self, etf_code: str) -> Optional[float]:
-        """Fetch NAV from EastMoney
+        """Fetch NAV from EastMoney with retry mechanism
+
+        Args:
+            etf_code: ETF code
+
+        Returns:
+            NAV value (real-time estimated NAV if available, otherwise latest NAV)
+        """
+        max_retries = 3
+        retry_delay = 1  # seconds
+
+        for attempt in range(max_retries):
+            try:
+                code_num = etf_code.split('.')[0]
+                url = f"http://fundgz.1234567.com.cn/js/{code_num}.js"
+
+                response = requests.get(url, timeout=10)  # Increased timeout
+                if response.status_code != 200:
+                    logger.warning(f"EastMoney API returned status {response.status_code} for {etf_code}")
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                        continue
+                    return None
+
+                # Parse JavaScript response
+                # Format: jsonpgz({"fundcode":"159920","name":"...","jzrq":"2025-11-17","dwjz":"1.612","gsz":"1.625",...});
+                # Priority: gsz (估算净值, real-time estimated) > dwjz (单位净值, last closing)
+
+                # Try to get estimated NAV first (real-time during trading hours)
+                gsz_match = re.search(r'"gsz":"([\d.]+)"', response.text)
+                if gsz_match:
+                    nav = float(gsz_match.group(1))
+                    logger.debug(f"Using estimated NAV (gsz) for {etf_code}: {nav}")
+                    return nav
+
+                # Fallback to unit NAV (last closing)
+                dwjz_match = re.search(r'"dwjz":"([\d.]+)"', response.text)
+                if dwjz_match:
+                    nav = float(dwjz_match.group(1))
+                    logger.debug(f"Using unit NAV (dwjz) for {etf_code}: {nav}")
+                    return nav
+
+                logger.warning(f"No NAV data found in EastMoney response for {etf_code}")
+                return None
+
+            except requests.Timeout as e:
+                logger.warning(f"EastMoney NAV fetch timeout for {etf_code} (attempt {attempt + 1}/{max_retries})")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return None
+            except Exception as e:
+                logger.warning(f"EastMoney NAV fetch failed for {etf_code} (attempt {attempt + 1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                return None
+
+        return None
+
+    def _fetch_nav_from_sina(self, etf_code: str) -> Optional[float]:
+        """Fetch NAV from Sina Finance
 
         Args:
             etf_code: ETF code
@@ -320,22 +398,40 @@ class ETFAnalyzer:
         """
         try:
             code_num = etf_code.split('.')[0]
-            url = f"http://fundgz.1234567.com.cn/js/{code_num}.js"
+            # Sina finance fund API
+            url = f"https://hq.sinajs.cn/list=fu_{code_num}"
 
-            response = requests.get(url, timeout=5)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Referer': 'https://finance.sina.com.cn/'
+            }
+
+            response = requests.get(url, headers=headers, timeout=10)
             if response.status_code != 200:
                 return None
 
-            # Parse JavaScript response
-            # Format: jsonpgz({"fundcode":"159920","name":"...","jzrq":"2025-11-17","dwjz":"1.612",...});
-            match = re.search(r'"dwjz":"([\d.]+)"', response.text)
-            if match:
-                return float(match.group(1))
+            # Parse response format: var hq_str_fu_513090="基金名称,净值,日期,时间,累计净值,..."
+            response.encoding = 'gbk'
+            text = response.text
+
+            if 'hq_str_fu_' not in text:
+                return None
+
+            # Extract data between quotes
+            match = re.search(r'"([^"]+)"', text)
+            if not match:
+                return None
+
+            parts = match.group(1).split(',')
+            if len(parts) >= 2 and parts[1]:
+                nav = float(parts[1])
+                logger.debug(f"Using NAV from Sina for {etf_code}: {nav}")
+                return nav
 
             return None
 
         except Exception as e:
-            logger.debug(f"EastMoney NAV fetch failed for {etf_code}: {e}")
+            logger.debug(f"Sina NAV fetch failed for {etf_code}: {e}")
             return None
 
     def _fetch_nav_from_jisilu(self, etf_code: str) -> Optional[float]:
@@ -370,6 +466,7 @@ class ETFAnalyzer:
                 if cell.get('fund_id') == code_num:
                     nav = cell.get('unit_net_value')
                     if nav:
+                        logger.debug(f"Using NAV from Jisilu for {etf_code}: {nav}")
                         return float(nav)
 
             return None

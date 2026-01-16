@@ -19,6 +19,7 @@ from src.strategies.bollinger_breakout import BollingerBreakout
 from src.strategies.rsi_reversal import RSIReversal
 from src.strategies.boll_rsi_combo import BollingerRSICombo
 from src.strategies.grid_trading import GridTrading
+from src.strategies.hs300_etf_rotation import HS300EtfRotation
 
 __all__ = [
     "MovingAverageCrossover",
@@ -28,6 +29,7 @@ __all__ = [
     "RSIReversal",
     "BollingerRSICombo",
     "GridTrading",
+    "HS300EtfRotation",
 ]
 
 # Strategy registry for easy loading by name
@@ -39,4 +41,5 @@ STRATEGY_REGISTRY = {
     "rsi_reversal": RSIReversal,
     "boll_rsi_combo": BollingerRSICombo,
     "grid_trading": GridTrading,
+    "hs300_etf_rotation": HS300EtfRotation,
 }

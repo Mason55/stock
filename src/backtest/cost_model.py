@@ -11,14 +11,14 @@ class CostModel:
         self.config = config or {}
         
         # Default cost structure for Chinese A-shares
-        self.commission_rate = Decimal(str(self.config.get('commission_rate', 0.0003)))  # 0.03%
+        self.commission_rate = Decimal(str(self.config.get('commission_rate', 0.0001)))  # 0.01%
         self.min_commission = Decimal(str(self.config.get('min_commission', 5.0)))       # 5 RMB minimum
-        
-        # Stamp tax (only on sells)
-        self.stamp_tax_rate = Decimal(str(self.config.get('stamp_tax_rate', 0.001)))     # 0.1%
-        
+
+        # Stamp tax (only on sells, ETF exempt)
+        self.stamp_tax_rate = Decimal(str(self.config.get('stamp_tax_rate', 0.0)))     # 0% for ETF
+
         # Transfer fee
-        self.transfer_fee_rate = Decimal(str(self.config.get('transfer_fee_rate', 0.00002)))  # 0.002%
+        self.transfer_fee_rate = Decimal(str(self.config.get('transfer_fee_rate', 0.0001)))  # 0.01%
         
         # Market impact (slippage)
         self.market_impact_rate = Decimal(str(self.config.get('market_impact_rate', 0.0005)))  # 0.05%

@@ -32,9 +32,10 @@ async def backtest_with_params(strategy_class, params: Dict, symbol: str, df: pd
     # Create backtest engine
     config = {
         'costs': {
-            'commission_rate': 0.0003,
+            'commission_rate': 0.0001,
             'min_commission': 5.0,
-            'stamp_tax_rate': 0.001
+            'transfer_fee_rate': 0.0001,
+            'stamp_tax_rate': 0.0
         },
         'risk': {
             'max_position_pct': 0.1,

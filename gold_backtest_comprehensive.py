@@ -52,9 +52,10 @@ async def run_backtest(symbol, strategy_name, strategy, days=120):
         initial_capital=1000000.0,
         config={
             'costs': {
-                'commission_rate': 0.0003,  # 0.03%
+                'commission_rate': 0.0001,  # 0.01%
                 'min_commission': 5.0,
-                'stamp_duty_rate': 0.001     # 0.1% on sell
+                'transfer_fee_rate': 0.0001,  # 0.01%
+                'stamp_duty_rate': 0.0     # 0% for ETF
             }
         }
     )

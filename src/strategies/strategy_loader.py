@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 from src.strategies.moving_average import MovingAverageCrossover
 from src.strategies.mean_reversion import MeanReversion
 from src.strategies.momentum import Momentum
+from src.strategies.hs300_etf_rotation import HS300EtfRotation
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +20,7 @@ class StrategyLoader:
         'moving_average_crossover': MovingAverageCrossover,
         'mean_reversion': MeanReversion,
         'momentum': Momentum,
+        'hs300_etf_rotation': HS300EtfRotation,
     }
 
     def __init__(self, config_path: str = None):

@@ -201,10 +201,12 @@ class Portfolio(EventHandler):
     def __init__(self, initial_capital: float = 1000000.0, event_queue: asyncio.Queue = None):
         self.initial_capital = initial_capital
         self.cash = initial_capital
+        self.reserved_cash = 0.0
         self.positions = {}  # symbol -> quantity
         self.holdings = {}   # symbol -> market_value
         self.total_value = initial_capital
         self.orders = {}     # order_id -> Order
+        self.reserved_orders = {}  # order_id -> reserved cash
         self.event_queue = event_queue  # For submitting orders
 
         # Performance tracking
@@ -235,7 +237,20 @@ class Portfolio(EventHandler):
                 quantity = self.calculate_position_size(event.symbol, event.strength)
 
             if quantity > 0:
-                order = self.create_market_order(event.symbol, OrderSide.BUY, quantity)
+                estimated_price = self._estimate_price(event.symbol)
+                min_order_value = float(event.metadata.get('min_order_value', 1000.0)) if event.metadata else 1000.0
+                quantity = self._cap_quantity_to_cash(quantity, estimated_price, min_order_value)
+                if quantity <= 0:
+                    return None
+
+                order = self.create_market_order(
+                    event.symbol,
+                    OrderSide.BUY,
+                    quantity,
+                    estimated_price=estimated_price
+                )
+                reserve_amount = self._estimate_order_cost(quantity, estimated_price)
+                self._reserve_cash(order.order_id, reserve_amount)
                 # Submit order to event queue for processing
                 if self.event_queue:
                     order_event = OrderEvent(timestamp=event.timestamp, order=order)
@@ -264,7 +279,7 @@ class Portfolio(EventHandler):
     
     def calculate_position_size(self, symbol: str, signal_strength: float) -> int:
         """Calculate position size based on available cash and signal strength"""
-        max_position_value = self.cash * 0.1 * signal_strength  # Max 10% per position
+        max_position_value = self.available_cash() * 0.1 * signal_strength  # Max 10% per position
 
         # Use current market price if available
         current_price = self.current_prices.get(symbol, 40.0)
@@ -272,10 +287,17 @@ class Portfolio(EventHandler):
 
         return quantity
     
-    def create_market_order(self, symbol: str, side: OrderSide, quantity: int) -> Order:
+    def create_market_order(
+        self,
+        symbol: str,
+        side: OrderSide,
+        quantity: int,
+        estimated_price: Optional[float] = None,
+    ) -> Order:
         """Create a market order"""
         order_id = f"ORDER_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-        
+        price = Decimal(str(estimated_price)) if estimated_price is not None else None
+
         order = Order(
             order_id=order_id,
             account_id="BACKTEST",
@@ -283,6 +305,7 @@ class Portfolio(EventHandler):
             side=side,
             order_type=OrderType.MARKET,
             quantity=quantity,
+            price=price,
             status=OrderStatus.NEW,
             time_in_force=TimeInForce.DAY,
             created_at=datetime.now()
@@ -304,9 +327,11 @@ class Portfolio(EventHandler):
         if order and order.side == OrderSide.BUY:
             self.positions[event.symbol] += event.quantity
             self.cash -= float(event.price * event.quantity + event.commission)
+            self._release_reserved_cash(order.order_id)
         elif order and order.side == OrderSide.SELL:
             self.positions[event.symbol] -= event.quantity
             self.cash += float(event.price * event.quantity - event.commission)
+            self._release_reserved_cash(order.order_id)
         
         # Record trade
         if order:
@@ -349,6 +374,43 @@ class Portfolio(EventHandler):
             prev_value = self.equity_curve[-2]['total_value']
             daily_return = (self.total_value - prev_value) / prev_value
             self.returns.append(daily_return)
+
+    def available_cash(self) -> float:
+        """Return cash not reserved for pending buy orders."""
+        return max(0.0, self.cash - self.reserved_cash)
+
+    def _estimate_price(self, symbol: str) -> float:
+        return float(self.current_prices.get(symbol, 10.0))
+
+    def _estimate_order_cost(self, quantity: int, price: float) -> float:
+        return float(quantity) * float(price) * 1.01
+
+    def _cap_quantity_to_cash(self, quantity: int, price: float, min_order_value: float) -> int:
+        if quantity <= 0 or price <= 0:
+            return 0
+        available = self.available_cash()
+        max_qty = int(available / (price * 1.01) / 100) * 100
+        quantity = min(quantity, max_qty)
+        if quantity <= 0:
+            return 0
+        if quantity * price < min_order_value:
+            return 0
+        return quantity
+
+    def _reserve_cash(self, order_id: str, amount: float) -> None:
+        if amount <= 0:
+            return
+        self.reserved_cash += amount
+        self.reserved_orders[order_id] = amount
+
+    def _release_reserved_cash(self, order_id: str) -> None:
+        reserved = self.reserved_orders.pop(order_id, 0.0)
+        if reserved:
+            self.reserved_cash = max(0.0, self.reserved_cash - reserved)
+
+    def release_reserved_cash(self, order_id: str) -> None:
+        """Release reserved cash for an order that won't be filled."""
+        self._release_reserved_cash(order_id)
 
 
 class BacktestEngine:
@@ -397,6 +459,8 @@ class BacktestEngine:
         """Add a trading strategy"""
         # Inject event_queue into strategy so it can emit signals
         strategy.event_queue = self.event_queue
+        if hasattr(strategy, "portfolio"):
+            strategy.portfolio = self.portfolio
 
         self.strategies.append(strategy)
         self.register_handler(EventType.MARKET_DATA, strategy)
@@ -501,6 +565,7 @@ class BacktestEngine:
             order.status = OrderStatus.REJECTED
             order.reject_reason = "Risk check failed"
             logger.warning(f"[Engine] Order REJECTED by risk manager")
+            self.portfolio.release_reserved_cash(order.order_id)
             return
 
         logger.info(f"[Engine] Order passed risk check, sending to market simulator")
@@ -545,6 +610,7 @@ class BacktestEngine:
             logger.info(f"[Engine] Order FILLED successfully")
         else:
             logger.warning(f"[Engine] Market simulator returned None - order NOT filled")
+            self.portfolio.release_reserved_cash(order.order_id)
     
     async def _generate_results(self) -> Dict:
         """Generate backtest results"""

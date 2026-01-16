@@ -26,6 +26,53 @@ momentum:
   signal_strength: 0.75
   max_positions: 5          # Maximum concurrent positions
 
+# HS300 + ETF weekly rotation (conservative)
+hs300_etf_rotation:
+  enabled: true
+  market_index_symbol: "000300.SH"
+  # Replace stock_universe with full HS300 list or provide stock_universe_path
+  stock_universe:
+    - "600036.SH"
+    - "600519.SH"
+    - "000001.SZ"
+    - "000858.SZ"
+    - "600000.SH"
+    - "600900.SH"
+    - "000002.SZ"
+    - "000977.SZ"
+  etf_universe:
+    - "510300.SH"
+    - "510500.SH"
+    - "510050.SH"
+    - "159915.SZ"
+    - "510880.SH"
+  defensive_asset: "511010.SH"
+  stock_allocation: 0.4
+  defensive_stock_allocation: 0.0
+  top_n_stocks: 10
+  top_n_etf: 3
+  momentum_lookback: 60
+  volatility_lookback: 20
+  trend_ma_short: 60
+  trend_ma_long: 120
+  min_stock_momentum: 0.0
+  min_etf_momentum: 0.0
+  max_stock_volatility: 0.05
+  use_vol_adjusted_momentum: true
+  max_drawdown_pct: 0.15
+  drawdown_recover_pct: 0.08
+  defensive_only_on_drawdown: true
+  min_defensive_weeks: 4
+  cooldown_weeks: 4
+  max_total_weight: 0.95
+  max_position_weight: 0.08
+  cash_buffer_pct: 0.05
+  min_order_value: 1000.0
+  max_order_value: 3000000.0
+  use_available_cash_only: true
+  two_phase_rebalance: true
+  lot_size: 100
+
 # Strategy Combinations (for multi-strategy portfolios)
 combinations:
   conservative:

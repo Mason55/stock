@@ -104,9 +104,10 @@ async def run_backtest(strategy, symbol: str, days: int = 60, use_real_data: boo
     # Create backtest engine
     config = {
         'costs': {
-            'commission_rate': 0.0003,
+            'commission_rate': 0.0001,
             'min_commission': 5.0,
-            'stamp_tax_rate': 0.001
+            'transfer_fee_rate': 0.0001,
+            'stamp_tax_rate': 0.0
         },
         'risk': {
             'max_position_pct': 0.1,

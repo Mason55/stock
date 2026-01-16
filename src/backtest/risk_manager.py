@@ -150,11 +150,12 @@ class BacktestRiskManager:
 
         estimated_cost = Decimal(order.quantity) * estimated_price * Decimal('1.01')  # Add 1% buffer for costs
 
+        available_cash = portfolio.available_cash() if hasattr(portfolio, 'available_cash') else portfolio.cash
         logger.info(f"[CashCheck] Estimated cost: ¥{estimated_cost} (price: ¥{estimated_price} × qty: {order.quantity} × 1.01)")
-        logger.info(f"[CashCheck] Available cash: ¥{portfolio.cash}")
+        logger.info(f"[CashCheck] Available cash: ¥{available_cash}")
 
-        if portfolio.cash < float(estimated_cost):
-            logger.warning(f"[CashCheck] Insufficient cash: need ¥{estimated_cost}, have ¥{portfolio.cash}")
+        if available_cash < float(estimated_cost):
+            logger.warning(f"[CashCheck] Insufficient cash: need ¥{estimated_cost}, have ¥{available_cash}")
             return False
 
         return True

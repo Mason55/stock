@@ -85,8 +85,10 @@ async def run_backtest(etf_code: str, config: Dict):
             'ignore_trading_hours': True  # Ignore trading hours check for backtest
         },
         'costs': {
-            'commission_rate': 0.0003,  # 0.03% commission
+            'commission_rate': 0.0001,  # 0.01% commission
             'min_commission': 5.0,  # Minimum 5 yuan
+            'transfer_fee_rate': 0.0001,  # 0.01% transfer fee
+            'stamp_tax_rate': 0.0,  # 0% stamp tax for ETF
             'slippage_rate': 0.0001  # 0.01% slippage
         },
         'risk': {
